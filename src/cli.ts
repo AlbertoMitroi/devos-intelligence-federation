@@ -4,6 +4,7 @@ import { writeFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { evaluate, renderReport } from './evaluate.ts';
 import { federate, loadInputs } from './federate.ts';
+import { runGitHubAction } from './gha.ts';
 import { ENGINE, indexDump, verifySystemGeneration, writeSystemGeneration } from './generation.ts';
 import { readSystem, SystemConfigError } from './system.ts';
 
@@ -14,6 +15,7 @@ Usage:
   verify <system generation> [--input <name>=<generation dir>]...
   evaluate <system generation> --expected <expected-links.yml> [--report <file.md>] [--json <file.json>]
   dump-index <system generation>
+  gha                      (GitHub Action mode: INPUT_SYSTEM, INPUT_INPUTS, INPUT_OUTPUT, INPUT_FAIL-ON)
   version [--json]
 
 Exit codes: 0 ok (federate: complete or partial), 2 usage, 50 verification failed, 51 no input usable.`;
@@ -113,6 +115,8 @@ function main(argv: string[]): number {
       process.stdout.write(`precision ${t.precision} (${t.truePositives}/${t.truePositives + t.falsePositives}), recall ${t.recall} (${t.truePositives}/${t.expected})\n`);
       return 0;
     }
+    case 'gha':
+      return runGitHubAction();
     case 'dump-index': {
       const dir = positional[0];
       if (!dir) throw new SystemConfigError('dump-index needs a system generation directory');

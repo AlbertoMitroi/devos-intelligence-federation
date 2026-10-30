@@ -1,0 +1,39 @@
+# Federation input for the lab system (format: devos-intelligence-federation/docs/PLAN.md, "Inputs").
+# Copy of devos-lab/system.yml (devos-lab main); paths are replaced with --input in scripts/verify.sh.
+# Source commits the generations must be built from (main of each repository, ground truth included):
+#   devos-lab-core f7339fa (tag v1.0.0 bacebb1), devos-lab-pricing 00891c7 (tags v1.0.0 24df09d, v1.1.0 dc68108),
+#   devos-lab-intake dbc7594, devos-lab-leasing 48d2aa0, devos-lab-web e21eef1.
+system: lab
+generations:
+  - name: core          # packages Lab.Core.* (no service)
+    path: generations/lab-core
+  - name: pricing       # Pricing.Api and the package Pricing.Client
+    path: generations/lab-pricing
+  - name: intake        # Kafka producer of lease-applications-v1 and lease-application-enrichment-v1
+    path: generations/lab-intake
+  - name: leasing       # main backend
+    path: generations/lab-leasing
+  - name: web           # Angular front end
+    path: generations/lab-web
+routes:
+  # lab-web services build URLs from environment.apiUrl (src/environments/environment.ts:3); the values are
+  # deployment URLs of lab-leasing, which its own generation cannot tell.
+  - from: web
+    baseUrl: environment.apiUrl
+    to: leasing
+  # Pricing.Client base address (lab-leasing src/Leasing.Host/appsettings.json:20, also used by
+  # tools/Leasing.QuoteBackfill/appsettings.json:4).
+  - from: leasing
+    baseUrl: Clients:Pricing:BaseAddress
+    to: pricing
+  # Lab.Core.Clients.Pricing base address (lab-leasing src/Leasing.Host/appsettings.json:23); the client source
+  # lives in lab-core, the call site and the configuration in lab-leasing.
+  - from: leasing
+    baseUrl: Clients:RateCards:BaseAddress
+    to: pricing
+messaging:
+  # lab-intake and lab-leasing each hold their own copy of the Avro records with the same full type name
+  # (Lab.Intake.Contracts.LeaseApplicationSubmitted, Lab.Intake.Contracts.LeaseApplicationEnriched), so the
+  # type name identifies a Kafka message across repositories. Bus messages are produced and consumed inside
+  # lab-leasing only.
+  contractIdentity: typeName

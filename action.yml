@@ -1,0 +1,34 @@
+name: intelligence-federation
+description: Combine generations of several repositories into one verifiable system generation.
+author: intelligence-federation contributors
+branding:
+  icon: share-2
+  color: blue
+inputs:
+  system:
+    description: system.yml, relative to the workspace.
+    required: false
+    default: system.yml
+  inputs:
+    description: "One <name>=<generation directory> per line (relative to the workspace); replaces the paths in system.yml."
+    required: false
+  output:
+    description: System generation directory, relative to the workspace. Must be absent or empty.
+    required: false
+    default: system-out
+  fail-on:
+    description: "Fail the step on: failed, partial or never."
+    required: false
+    default: failed
+outputs:
+  generation-path:
+    description: System generation directory, relative to the workspace.
+  manifest-path:
+    description: manifest.json of the system generation; empty when none was written.
+  status:
+    description: complete, partial or failed.
+runs:
+  using: docker
+  image: docker://ghcr.io/albertomitroi/intelligence-federation:0.1.0-action
+  args:
+    - gha

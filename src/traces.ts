@@ -1,5 +1,5 @@
 // End-to-end traces (PLAN pipeline 5): chains of cross-repository links joined inside an input through bounded call
-// paths and the input's own links (in-process dispatch). Each segment keeps its resolution and evidence; the trace
+// paths and the input's own links (in-process dispatch, messages inside the repository). Each segment keeps its resolution and evidence; the trace
 // takes the weakest.
 import { compareOrdinal, recordId } from './util/canonical.ts';
 import type { Input } from './input.ts';
@@ -22,7 +22,7 @@ interface Edge {
   link?: string;
 }
 
-/** Forward edges inside one input: calls, implementations of a called interface member, in-process dispatch. */
+/** Forward edges inside one input: calls, implementations of a called interface member, in-process dispatch, messages. */
 class CallGraph {
   private readonly input: Input;
   private readonly edges = new Map<string, Edge[]>();
@@ -49,14 +49,15 @@ class CallGraph {
     // In-process dispatch: the sender reaches the handler (a type handler reaches its members).
     const observations = new Map(input.set.observations.map((o) => [o.id, o]));
     for (const l of input.set.links) {
-      if (l.kind !== 'dispatches_to' || !l.to) continue;
+      const messaging = l.kind === 'consumes_contract' && l.via === 'messaging';
+      if ((l.kind !== 'dispatches_to' && !messaging) || !l.to || l.resolution === 'unresolved') continue;
       const from = observations.get((l.from as Rec).observation as string);
       const to = observations.get((l.to as Rec).observation as string);
-      const sender = (from?.sender ?? from?.caller) as string | undefined;
+      const sender = (from?.sender ?? from?.caller ?? from?.publisher) as string | undefined;
       const handler = to?.handler as string | undefined;
       if (!sender || !handler) continue;
       const ev = (l.evidence as string[]).map((x) => pref(input.name, x));
-      add(sender, { to: handler, kind: 'dispatch', resolution: l.resolution as Resolution, evidence: ev, link: pref(input.name, l.id) });
+      add(sender, { to: handler, kind: messaging ? 'message' : 'dispatch', resolution: l.resolution as Resolution, evidence: ev, link: pref(input.name, l.id) });
     }
     for (const [from, list] of this.edges) list.sort((a, b) => compareOrdinal(a.to + a.kind, b.to + b.kind));
   }

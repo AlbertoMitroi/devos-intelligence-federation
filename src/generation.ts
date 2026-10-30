@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { canonical, compareOrdinal, recordId, sha256Hex } from './util/canonical.ts';
-import { validate } from './artifacts/schema.ts';
+import { SCHEMA_DIR, validate } from './artifacts/schema.ts';
 import { checkIntegrity, schemaFor } from './integrity.ts';
 import type { Federation, InputState } from './federate.ts';
 import { readNdjson, readRecords, SYSTEM_FILES, writeNdjson, FILES, type Rec, type RecordSet } from './records.ts';
@@ -153,6 +153,14 @@ export function writeSystemGeneration(fed: Federation, out: string, startedAt: n
   return { status, counts };
 }
 
+const proposalCache = new Map<string, Record<string, any>>();
+/** System-only schemas (schema/system-proposal): the format proposed to the contract owner. */
+function proposal(name: string): Record<string, any> {
+  let s = proposalCache.get(name);
+  if (!s) proposalCache.set(name, (s = JSON.parse(readFileSync(join(SCHEMA_DIR, '..', 'system-proposal', `${name}.schema.json`), 'utf8'))));
+  return s!;
+}
+
 export interface VerifyResult {
   ok: boolean;
   errors: string[];
@@ -167,7 +175,7 @@ export function verifySystemGeneration(dir: string, inputDirs: Map<string, strin
   if (!existsSync(manifestPath)) return { ok: false, errors: ['manifest.json is missing: not a complete system generation'], notes };
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, any>;
   errors.push(...validate(schemaFor('manifest', true), manifest).map((e) => `manifest.json ${e}`));
-  if (manifest.generationType !== 'system') errors.push(`manifest.json generationType is ${manifest.generationType}, expected system`);
+  errors.push(...validate(proposal('system-manifest'), manifest).map((e) => `manifest.json ${e}`));
   if (String(manifest.schemaVersion ?? '').split('.')[0] !== '1') errors.push(`schemaVersion ${manifest.schemaVersion}: only major 1 is supported`);
   for (const cap of manifest.requiredCapabilities ?? []) errors.push(`unknown required capability '${cap}': refusing the generation`);
   const listed = new Map<string, { sha256: string; size: number }>((manifest.files ?? []).map((f: any) => [f.path, f]));
@@ -201,8 +209,10 @@ export function verifySystemGeneration(dir: string, inputDirs: Map<string, strin
         if (r.input !== input) errors.push(`${FILES[key]} ${r.id}: input field ${String(r.input)} does not match the id prefix`);
       }
     }
+  for (const i of inputs) errors.push(...validate(proposal('input'), i).map((e) => `inputs.ndjson ${i.id}: ${e}`));
   const linkIds = new Set(set.links.map((l) => l.id));
   for (const l of set.links.filter((x) => x.scope === 'system')) {
+    errors.push(...validate(proposal('system-link'), l).map((e) => `graph/links.ndjson ${l.id}: ${e}`));
     for (const side of ['from', 'to'] as const) {
       const e = l[side] as Rec | null;
       if (e && !names.has(e.input as string)) errors.push(`link ${l.id}: unknown ${side} input ${String(e.input)}`);
@@ -211,12 +221,16 @@ export function verifySystemGeneration(dir: string, inputDirs: Map<string, strin
     }
   }
   const packages = readNdjson(join(dir, SYSTEM_FILES.packages));
+  for (let i = 1; i < packages.length; i++) if (compareOrdinal(packages[i - 1].id, packages[i].id) >= 0) errors.push(`graph/packages.ndjson: ids not sorted and unique at ${packages[i].id}`);
   for (const p of packages) {
-    if (!/^pkr:[0-9a-f]{32}$/.test(p.id)) errors.push(`packages.ndjson ${p.id}: id does not match ^pkr:[0-9a-f]{32}$`);
+    errors.push(...validate(proposal('package-resolution'), p).map((e) => `graph/packages.ndjson ${p.id}: ${e}`));
     if (!names.has((p.consumer as Rec).input as string)) errors.push(`packages.ndjson ${p.id}: unknown consumer input`);
   }
   const traces = readNdjson(join(dir, SYSTEM_FILES.traces));
-  for (const t of traces) for (const id of t.links as string[]) if (!linkIds.has(id)) errors.push(`traces.ndjson ${t.id}: unknown link ${id}`);
+  for (const t of traces) {
+    errors.push(...validate(proposal('trace'), t).map((e) => `graph/traces.ndjson ${t.id}: ${e}`));
+    for (const id of t.links as string[]) if (!linkIds.has(id)) errors.push(`graph/traces.ndjson ${t.id}: unknown link ${id}`);
+  }
   // Optional: the inputs themselves, against the manifest digests recorded in inputs.ndjson.
   for (const [name, path] of inputDirs) {
     const rec = inputs.find((i) => i.id === name);

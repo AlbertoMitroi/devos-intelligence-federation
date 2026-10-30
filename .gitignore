@@ -1,3 +1,6 @@
 node_modules/
 .verify/
 system-out/
+.ci-action/
+ci-generations/
+action-out/
