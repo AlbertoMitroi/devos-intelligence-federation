@@ -1,0 +1,20 @@
+# eShopOnAbp at 7bfed7a322d16b34a5a66208c03486fa5dfacee9: one repository analysed by two engines.
+# Paths are relative to this file and are usually replaced with --input <name>=<generation directory>.
+system: eshoponabp
+generations:
+  - name: angular       # angular-intelligence over apps/angular
+    path: ../../../_generations/eshoponabp-angular
+  - name: dotnet        # dotnet-intelligence over the .NET solution(s)
+    path: ../../../_generations/eshoponabp-dotnet
+routes:
+  # apps/angular/src/environments/environment.ts: apis.Catalog.url https://localhost:44354 is the SelfUrl of
+  # services/catalog/src/EShopOnAbp.CatalogService.HttpApi.Host (appsettings.json:3, launchSettings.json:6);
+  # apis.Ordering.url https://localhost:44356 is the OrderingService.HttpApi.Host. Both live in the dotnet input.
+  - from: angular
+    baseUrl: environment.apis.Catalog.url
+    to: dotnet
+  - from: angular
+    baseUrl: environment.apis.Ordering.url
+    to: dotnet
+messaging:
+  contractIdentity: typeName

@@ -1,0 +1,25 @@
+{
+  "name": "intelligence-federation",
+  "version": "0.1.0",
+  "description": "Combines generations of several repositories into one verifiable system generation.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.22.0"
+  },
+  "bin": {
+    "intelligence-federation": "src/cli.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test --test-reporter=spec 'tests/unit/*.test.ts'"
+  },
+  "dependencies": {
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "6.0.3"
+  }
+}

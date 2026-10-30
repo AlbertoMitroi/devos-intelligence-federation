@@ -1,0 +1,56 @@
+# Cross-repository links the lab system must have, transcribed by hand from the lab ground truth (written from source
+# before any engine run) and from the comments in devos-lab/system.yml. Never edited to fit federation output.
+# Sources: devos-lab-web ground-truth.yml (web-http-calls, web-realtime-subscribe), devos-lab-leasing ground-truth.yml
+# (leasing-pricing-calls, leasing-kafka-consumers, leasing-kafka-producer, leasing-bus-messages, leasing-signalr,
+# leasing-lab-packages), devos-lab-pricing ground-truth.yml (pricing-client-version), devos-lab-core ground-truth.yml
+# (core-package-version).
+#
+# Matching: `entity` is a substring of the link's entity id; `route` is "METHOD /canonical/route" of the endpoint;
+# `package` is the package id a call goes through; `packageEntity` a substring of the package symbol called;
+# `method` the client method of a real-time subscription.
+system: lab
+links:
+  # web -> leasing over HTTP (web-http-calls, 15 calls, base address environment.apiUrl)
+  - { id: web-applications-search, ref: lab-web/web-http-calls, via: http, from: { input: web, entity: "ApplicationsService.search" }, to: { input: leasing, entity: "ApplicationsController.Search(" } }
+  - { id: web-applications-get, ref: lab-web/web-http-calls, via: http, from: { input: web, entity: "ApplicationsService.get" }, to: { input: leasing, entity: "ApplicationsController.Get(" } }
+  - { id: web-applications-review, ref: lab-web/web-http-calls, via: http, from: { input: web, entity: "ApplicationsService.review" }, to: { input: leasing, entity: "ApplicationsController.Review(" } }
+  - { id: web-applications-withdraw, ref: lab-web/web-http-calls, via: http, from: { input: web, entity: "ApplicationsService.withdraw" }, to: { input: leasing, entity: "ApplicationsController.Withdraw(" } }
+  - { id: web-assessments-list, ref: lab-web/web-http-calls, via: http, from: { input: web, entity: "AssessmentsService.list" }, to: { input: leasing, entity: "AssessmentsController.Search(" } }
+  - { id: web-assessments-assess, ref: lab-web/web-http-calls, via: http, from: { input: web, entity: "AssessmentsService.assess" }, to: { input: leasing, entity: "AssessmentsController.Assess(" } }
+  - { id: web-quotes-list, ref: lab-web/web-http-calls, via: http, from: { input: web, entity: "QuotesService.list" }, to: { input: leasing, entity: "QuotesController.Search(" } }
+  - { id: web-quotes-get, ref: lab-web/web-http-calls, via: http, from: { input: web, entity: "QuotesService.get" }, to: { input: leasing, entity: "QuotesController.Get(" } }
+  - { id: web-quotes-accept, ref: lab-web/web-http-calls, via: http, from: { input: web, entity: "QuotesService.accept" }, to: { input: leasing, entity: "QuotesController.Accept(" } }
+  - { id: web-quotes-recalculate, ref: lab-web/web-http-calls, via: http, from: { input: web, entity: "QuotesService.recalculate" }, to: { input: leasing, entity: "QuotesController.Recalculate(" } }
+  - { id: web-leases-search, ref: lab-web/web-http-calls, via: http, from: { input: web, entity: "LeasesService.search" }, to: { input: leasing, entity: "LeasesController.Search(" } }
+  - { id: web-leases-get, ref: lab-web/web-http-calls, via: http, from: { input: web, entity: "LeasesService.get" }, to: { input: leasing, entity: "LeasesController.Get(" } }
+  - { id: web-leases-document, ref: lab-web/web-http-calls, via: http, from: { input: web, entity: "LeasesService.document" }, to: { input: leasing, entity: "LeasesController.GetDocument(" } }
+  - { id: web-leases-sign, ref: lab-web/web-http-calls, via: http, from: { input: web, entity: "LeasesService.sign" }, to: { input: leasing, entity: "LeasesController.Sign(" } }
+  - { id: web-portfolio-summary, ref: lab-web/web-http-calls, via: http, from: { input: web, entity: "PortfolioService.summary" }, to: { input: leasing, entity: "AdminController.Portfolio(" } }
+
+  # leasing -> pricing over HTTP through packages (leasing-pricing-calls)
+  - { id: leasing-rate-card, ref: lab-leasing/leasing-pricing-calls, via: http, from: { input: leasing, entity: "Leasing.Pricing.QuotePricingService.", package: "Lab.Core.Clients.Pricing", packageEntity: "IRateCardClient.GetRateCardAsync(" }, to: { input: pricing, route: "GET /api/rate-cards/{}" } }
+  - { id: leasing-calculate-quote, ref: lab-leasing/leasing-pricing-calls, via: http, from: { input: leasing, entity: "Leasing.Pricing.QuotePricingService.", package: "Pricing.Client", packageEntity: "IPricingClient.CalculateQuoteAsync(" }, to: { input: pricing, entity: "QuotesController.Calculate(" } }
+  - { id: leasing-recalculate-quote, ref: lab-leasing/leasing-pricing-calls, via: http, from: { input: leasing, entity: "Leasing.Pricing.QuotePricingService.", package: "Pricing.Client", packageEntity: "IPricingClient.RecalculateQuoteAsync(" }, to: { input: pricing, entity: "QuotesController.Recalculate(" } }
+  - { id: backfill-get-quote, ref: lab-leasing/leasing-pricing-calls, via: http, from: { input: leasing, entity: "tools/Leasing.QuoteBackfill/", package: "Pricing.Client", packageEntity: "IPricingClient.GetQuoteAsync(" }, to: { input: pricing, entity: "QuotesController.Get(" } }
+
+  # intake -> leasing over Kafka (leasing-kafka-consumers; record types shared by full name)
+  - { id: kafka-applications, ref: lab-leasing/leasing-kafka-consumers, via: messaging, from: { input: intake, entity: "KafkaApplicationPublisher.PublishSubmitted(" }, to: { input: leasing, entity: "LeaseApplicationSubmittedConsumer" } }
+  - { id: kafka-enrichment, ref: lab-leasing/leasing-kafka-consumers, via: messaging, from: { input: intake, entity: "KafkaApplicationPublisher.PublishEnriched(" }, to: { input: leasing, entity: "LeaseApplicationEnrichedConsumer" } }
+
+  # leasing -> web over SignalR (leasing-signalr, web-realtime-subscribe)
+  - { id: signalr-flow-updated, ref: lab-web/web-realtime-subscribe, via: realtime, from: { input: leasing, entity: "FlowProjectionService.", packageEntity: "IMessageHubUtility.SendToAll(" }, to: { input: web, method: flowUpdated } }
+  - { id: signalr-task-assigned, ref: lab-web/web-realtime-subscribe, via: realtime, from: { input: leasing, entity: "FlowProjectionService.", packageEntity: "IMessageHubUtility.SendToSpecifiedUsers(" }, to: { input: web, method: taskAssigned } }
+
+# Messages that leave the system: the link must exist as unresolved, with its reason.
+unresolved:
+  - { id: kafka-contracts-out, ref: lab-leasing/leasing-kafka-producer, via: messaging, from: { input: leasing, entity: "KafkaLeaseContractPublisher.PublishActivated(" } }
+  - { id: bus-notice-outbox, ref: lab-leasing/leasing-bus-messages, via: messaging, from: { input: leasing, entity: "BusNoticeOutbox." } }
+
+# Package to source (leasing-lab-packages, pricing-client-version, core-package-version).
+packages:
+  - { id: pricing-client-current, ref: lab-leasing/leasing-lab-packages, consumer: leasing, package: Pricing.Client, version: 1.1.0, producer: pricing, versionMatch: exact }
+  - { id: pricing-client-older, ref: lab-leasing/leasing-lab-packages, consumer: leasing, package: Pricing.Client, version: 1.0.0, producer: pricing, versionMatch: different }
+  - { id: core-clients-pricing, ref: lab-leasing/leasing-lab-packages, consumer: leasing, package: Lab.Core.Clients.Pricing, version: 1.0.0, producer: core, versionMatch: exact }
+  - { id: core-workflow, ref: lab-leasing/leasing-lab-packages, consumer: leasing, package: Lab.Core.Workflow.EventFlow, version: 1.0.0, producer: core, versionMatch: exact }
+  - { id: core-bpmn, ref: lab-leasing/leasing-lab-packages, consumer: leasing, package: Lab.Core.Transform.Bpmn, version: 1.0.0, producer: core, versionMatch: exact }
+  - { id: core-message-hubs, ref: lab-leasing/leasing-lab-packages, consumer: leasing, package: Lab.Core.MessageHubs, version: 1.0.0, producer: core, versionMatch: exact }

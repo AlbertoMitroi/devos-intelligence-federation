@@ -1,0 +1,26 @@
+# Cross-engine links of eShopOnAbp at 7bfed7a322d16b34a5a66208c03486fa5dfacee9, written by hand from source:
+# the 17 calls of the generated Angular proxies (apps/angular/projects/catalog/src/lib/proxy/products/*.service.ts,
+# apps/angular/projects/ordering/src/lib/proxy/orders/order.service.ts; also listed in
+# devos-angular-intelligence/tests/eshoponabp/ground-truth.md) answered by the ABP application services exposed as
+# conventional controllers (CatalogServiceHttpApiHostModule.cs:65, OrderingServiceHttpApiHostModule.cs:64):
+# ProductAppService.cs, PublicProductAppService.cs, OrderAppService.cs. The Angular proxies are generated from those
+# services, one proxy method per service method.
+system: eshoponabp
+links:
+  - { id: public-product-get, ref: public-product.service.ts:13 -> PublicProductAppService.cs:28, via: http, from: { input: angular, entity: "PublicProductService.get" }, to: { input: dotnet, entity: "PublicProductAppService.GetAsync(" } }
+  - { id: public-product-list, ref: public-product.service.ts:20 -> PublicProductAppService.cs:19, via: http, from: { input: angular, entity: "PublicProductService.getList" }, to: { input: dotnet, entity: "PublicProductAppService.GetListAsync" } }
+  - { id: product-create, ref: product.service.ts:13 -> ProductAppService.cs:60, via: http, from: { input: angular, entity: "#ProductService.create" }, to: { input: dotnet, entity: "ProductAppService.CreateAsync(" } }
+  - { id: product-delete, ref: product.service.ts:21 -> ProductAppService.cs:89, via: http, from: { input: angular, entity: "#ProductService.delete" }, to: { input: dotnet, entity: "ProductAppService.DeleteAsync(" } }
+  - { id: product-get, ref: product.service.ts:28 -> ProductAppService.cs:53, via: http, from: { input: angular, entity: "#ProductService.get" }, to: { input: dotnet, entity: ".ProductAppService.GetAsync(" } }
+  - { id: product-list, ref: product.service.ts:35 -> ProductAppService.cs:45, via: http, from: { input: angular, entity: "#ProductService.getList" }, to: { input: dotnet, entity: ".ProductAppService.GetListAsync" } }
+  - { id: product-list-paged, ref: product.service.ts:42 -> ProductAppService.cs:26, via: http, from: { input: angular, entity: "#ProductService.getListPaged" }, to: { input: dotnet, entity: ".ProductAppService.GetListPagedAsync(" } }
+  - { id: product-update, ref: product.service.ts:50 -> ProductAppService.cs:74, via: http, from: { input: angular, entity: "#ProductService.update" }, to: { input: dotnet, entity: "ProductAppService.UpdateAsync(" } }
+  - { id: order-create, ref: order.service.ts:13 -> OrderAppService.cs:119, via: http, from: { input: angular, entity: "OrderService.create" }, to: { input: dotnet, entity: "OrderAppService.CreateAsync(" } }
+  - { id: order-get, ref: order.service.ts:21 -> OrderAppService.cs:34, via: http, from: { input: angular, entity: "OrderService.get" }, to: { input: dotnet, entity: "OrderAppService.GetAsync(" } }
+  - { id: order-by-order-no, ref: order.service.ts:28 -> OrderAppService.cs:97, via: http, from: { input: angular, entity: "OrderService.getByOrderNo" }, to: { input: dotnet, entity: "OrderAppService.GetByOrderNoAsync(" } }
+  - { id: order-dashboard, ref: order.service.ts:36 -> OrderAppService.cs:66, via: http, from: { input: angular, entity: "OrderService.getDashboard" }, to: { input: dotnet, entity: "OrderAppService.GetDashboardAsync(" } }
+  - { id: order-list-paged, ref: order.service.ts:44 -> OrderAppService.cs:54, via: http, from: { input: angular, entity: "OrderService.getListPaged" }, to: { input: dotnet, entity: "OrderAppService.GetListPagedAsync(" } }
+  - { id: order-my-orders, ref: order.service.ts:52 -> OrderAppService.cs:40, via: http, from: { input: angular, entity: "OrderService.getMyOrders" }, to: { input: dotnet, entity: "OrderAppService.GetMyOrdersAsync(" } }
+  - { id: order-orders, ref: order.service.ts:60 -> OrderAppService.cs:47, via: http, from: { input: angular, entity: "OrderService.getOrders" }, to: { input: dotnet, entity: "OrderAppService.GetOrdersAsync(" } }
+  - { id: order-set-as-cancelled, ref: order.service.ts:68 -> OrderAppService.cs:105, via: http, from: { input: angular, entity: "OrderService.setAsCancelled" }, to: { input: dotnet, entity: "OrderAppService.SetAsCancelledAsync(" } }
+  - { id: order-set-as-shipped, ref: order.service.ts:75 -> OrderAppService.cs:111, via: http, from: { input: angular, entity: "OrderService.setAsShipped" }, to: { input: dotnet, entity: "OrderAppService.SetAsShippedAsync(" } }
