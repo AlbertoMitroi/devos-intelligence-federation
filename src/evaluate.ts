@@ -43,6 +43,8 @@ export interface Evaluation {
   unresolved: { id: string; ref?: string; found: boolean; reason?: string }[];
   unexpectedUnresolved: { id: string; from: string; reason?: string }[];
   packages: { id: string; ref?: string; found: boolean; producer: string | null; versionMatch: string | null; expectedVersionMatch: string; resolution: string | null; ok: boolean; reason?: string }[];
+  /** implemented_by_package links: package symbols used by a consumer, resolved to the producer's source. */
+  packageSymbols: { links: number; exact: number; ambiguous: number; candidate: number; unresolved: number };
 }
 
 function ratio(n: number, d: number): string {
@@ -78,7 +80,8 @@ export function evaluate(dir: string, expectedFile: string): Evaluation {
     return { id: x.id, ref: x.ref, via: x.via, found: hits.length > 0, links: hits.map((h) => ({ id: h.id, resolution: h.resolution as string, ...(h.reason ? { reason: h.reason as string } : {}) })) };
   });
   const fps = resolved.filter((l) => !matchedBy.has(l.id)).sort((a, b) => compareOrdinal(a.id, b.id));
-  const vias = [...new Set([...expected.map((x) => x.via), ...resolved.map((l) => l.via as string)])].sort(compareOrdinal);
+  // Every link kind is reported, also when nothing is expected or emitted (`inprocess` is dispatches_to).
+  const vias = [...new Set(['http', 'messaging', 'realtime', 'inprocess', ...expected.map((x) => x.via), ...resolved.map((l) => l.via as string)])].sort(compareOrdinal);
   const byVia: Evaluation['byVia'] = {};
   for (const via of vias) {
     const exp = result.filter((r) => r.via === via);
@@ -100,6 +103,9 @@ export function evaluate(dir: string, expectedFile: string): Evaluation {
     if (hit) unresolvedMatched.add(hit.id);
     return { id: x.id, ref: x.ref, found: !!hit, ...(hit?.reason ? { reason: hit.reason as string } : {}) };
   });
+  const packageLinks = readNdjson(join(dir, 'graph/links.ndjson')).filter((l) => l.scope === 'system' && l.kind === 'implemented_by_package');
+  const countRes = (r: string) => packageLinks.filter((l) => l.resolution === r).length;
+  const packageSymbols = { links: packageLinks.length, exact: countRes('exact'), ambiguous: countRes('ambiguous'), candidate: countRes('candidate'), unresolved: countRes('unresolved') };
   const packageRecords = readNdjson(join(dir, SYSTEM_FILES.packages));
   const packages = (spec.packages ?? []).map((x) => {
     const p = packageRecords.find((r) => (r.consumer as Rec).input === x.consumer && r.packageId === x.package && r.version === x.version);
@@ -117,6 +123,7 @@ export function evaluate(dir: string, expectedFile: string): Evaluation {
     unresolved,
     unexpectedUnresolved: unresolvedLinks.filter((l) => !unresolvedMatched.has(l.id)).map((l) => ({ id: l.id, from: label(l.from as Rec), ...(l.reason ? { reason: l.reason as string } : {}) })),
     packages,
+    packageSymbols,
   };
 }
 
@@ -126,8 +133,13 @@ export function renderReport(e: Evaluation): string {
   out.push(`## Totals (${e.system})`, '');
   out.push(`- Precision **${t.precision}** (${t.truePositives} of ${t.emitted} resolved links match an expected link); precision of exact links ${t.exactPrecision}.`);
   out.push(`- Recall **${t.recall}** (${t.found} of ${t.expected} expected links found).`, '');
-  out.push('| Via | Expected | Found | Recall | Emitted | Matching | Precision |', '|---|---|---|---|---|---|---|');
-  for (const [via, v] of Object.entries(e.byVia)) out.push(`| ${via} | ${v.expected} | ${v.found} | ${v.recall} | ${v.emitted} | ${v.truePositives} | ${v.precision} |`);
+  const okPackages = e.packages.filter((p) => p.ok).length;
+  const kindName: Record<string, string> = { http: 'HTTP (configured_route)', messaging: 'messaging (consumes_contract)', realtime: 'real time (pushes_to)', inprocess: 'dispatch (dispatches_to)' };
+  out.push('| Kind | Expected | Found | Recall | Emitted | Matching | Precision |', '|---|---|---|---|---|---|---|');
+  for (const [via, v] of Object.entries(e.byVia)) out.push(`| ${kindName[via] ?? via} | ${v.expected} | ${v.found} | ${v.recall} | ${v.emitted} | ${v.truePositives} | ${v.precision} |`);
+  out.push(`| package (packages.ndjson: producer and version match) | ${e.packages.length} | ${okPackages} | ${ratio(okPackages, e.packages.length)} | ${e.packages.filter((p) => p.found).length} | ${okPackages} | ${ratio(okPackages, e.packages.filter((p) => p.found).length)} |`);
+  const ps = e.packageSymbols;
+  out.push('', `Package symbols (implemented_by_package): ${ps.links} links, ${ps.exact} exact, ${ps.ambiguous} ambiguous, ${ps.candidate} candidate, ${ps.unresolved} unresolved (a symbol the producer does not declare at its commit).`);
   out.push('', '| Resolution | Emitted | Matching |', '|---|---|---|');
   for (const [r, v] of Object.entries(e.byResolution)) out.push(`| ${r} | ${v.emitted} | ${v.truePositives} |`);
   out.push('', '## Expected links', '', '| Expected | Ground truth | Found | Resolution |', '|---|---|---|---|');

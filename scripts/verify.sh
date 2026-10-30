@@ -5,7 +5,8 @@
 # 3. federates the lab generations (tests/lab) twice with the runtime image, read-only inputs, and compares the two
 #    system generations byte for byte (run.json excluded) and through the canonical dump of index.sqlite,
 # 4. verifies the system generation (with the inputs' manifest digests) and evaluates it against
-#    tests/lab/expected-links.yml: recall must be 1.000 and every expected unresolved link present,
+#    tests/lab/expected-links.yml: precision and recall must be 1.000, every expected unresolved link present and
+#    every package resolved to its producer with the expected version match,
 # 5. runs the action image in GitHub Action mode against a simulated workspace.
 set -euo pipefail
 
@@ -56,8 +57,9 @@ docker run --rm --network none -v "$work/inputs:/generations:ro" -v "$work/out:/
 docker run --rm --network none --user "$user" -v "$work/out:/out" -v "$root/tests/lab:/config:ro" \
   "$tag" evaluate /out/lab-1 --expected /config/expected-links.yml --report /out/lab-evaluation.md --json /out/lab-evaluation.json \
   | tee "$work/evaluation.txt"
+grep -q 'precision 1.000' "$work/evaluation.txt"
 grep -q 'recall 1.000' "$work/evaluation.txt"
-node_check='const e=JSON.parse(require("fs").readFileSync(0,"utf8"));const bad=e.unresolved.filter(u=>!u.found).map(u=>u.id);if(bad.length){console.error("missing unresolved: "+bad);process.exit(1)}'
+node_check='const e=JSON.parse(require("fs").readFileSync(0,"utf8"));const bad=[...e.unresolved.filter(u=>!u.found).map(u=>"unresolved "+u.id),...e.packages.filter(p=>!p.ok).map(p=>"package "+p.id)];if(bad.length){console.error("missing: "+bad.join(", "));process.exit(1)}'
 docker run --rm -i --entrypoint node "$tag" -e "$node_check" < "$work/out/lab-evaluation.json"
 
 step "action mode"

@@ -56,7 +56,7 @@ Records keep their input's ids, prefixed with the input name (`leasing/rel:...`,
 | 1 | CLI `federate`, `verify`, `evaluate`, `dump-index`, `version`, `gha` | `src/cli.ts`, `src/gha.ts` | unit tests, `scripts/verify.sh` | done |
 | 1 | Docker image (test, runtime, action), Action, CI on amd64 and arm64 with byte comparison | `Dockerfile`, `action.yml`, `.github/workflows/ci.yml` | CI | done |
 | 2 | Input verification, inventory, failing inputs reported and excluded | `src/input.ts`, `src/generation.ts` | unit test (tampered input) | done |
-| 3 | Package to source with version matching | `src/packages.ts` | unit test (1.0.0 vs 1.1.0), lab report | done; lab blocked on engine data (no `packageId` in lab-core and lab-pricing generations) |
+| 3 | Package to source with version matching | `src/packages.ts` | unit test (1.0.0 vs 1.1.0), lab report | done; on the lab since the v1.2 regeneration (Step 1b report) |
 | 4 | Cross-repository links and traces | `src/links.ts`, `src/traces.ts` | lab evaluation | done |
 | 4 | `index.sqlite` over the union, deterministic dump | `src/sqlite.ts` | two runs, dump compared | done |
 | 4 | System context packs, manifest last | `src/packs.ts`, `src/generation.ts` | verify | done |
@@ -67,7 +67,7 @@ Records keep their input's ids, prefixed with the input name (`leasing/rel:...`,
 | 6 | Real time through `realtime.connection`, method names case-insensitive | `src/links.ts` | unit test (contract example) | done; lab inputs do not carry a connection route yet |
 | 6 | Call-site argument substitution (C7) for real-time methods, message destinations, HTTP routes | `src/arguments.ts` | unit tests | done; no input emits `call.argument` yet |
 | 6 | `dispatches_to` across inputs (C8) | `src/links.ts` | unit test | done |
-| 6 | Rerun the lab evaluation on regenerated lab-core and lab-pricing (package fields) | `tests/lab` | `scripts/verify.sh`, report | waiting for the dotnet regeneration |
+| 6 | Rerun the lab evaluation on the v1.2 generations | `tests/lab` | `scripts/verify.sh`, Step 1b report | done: precision and recall 1.000 |
 | 6 | OCI inputs (`oci:` in system.yml), wiki pages | | | not started |
 
 ## Gates

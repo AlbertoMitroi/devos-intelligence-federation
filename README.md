@@ -5,7 +5,7 @@ Combines generations of several repositories (from `dotnet-intelligence` and `an
 repositories (HTTP, messaging, real time, through client packages), end-to-end traces, `index.sqlite` over the union and
 system context packs, manifest written last.
 
-**Status: Step 1 done** (lab and eShopOnAbp validated, see [docs/reports/step-1-lab-and-eshoponabp.md](docs/reports/step-1-lab-and-eshoponabp.md)).
+**Status: Step 1 done** on contract v1.2: lab precision and recall 1.000 on v1.2 generations ([docs/reports/step-1b-lab-contract-v1.2.md](docs/reports/step-1b-lab-contract-v1.2.md); Step 1 on v1.1 inputs: [docs/reports/step-1-lab-and-eshoponabp.md](docs/reports/step-1-lab-and-eshoponabp.md)).
 Plan: [docs/PLAN.md](docs/PLAN.md). Output format: contract v1.2 (`devos-intelligence-contract` tag `v1.2.0`, section "System generation"), vendored in `schema/`; design notes in [docs/SYSTEM-GENERATION.md](docs/SYSTEM-GENERATION.md).
 Decisions: [docs/DECISIONS.md](docs/DECISIONS.md).
 
