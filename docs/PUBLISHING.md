@@ -22,14 +22,15 @@ A system generation is published with the same layout as an engine's generation 
 |---|---|
 | Inputs | each generation in `system.yml` with `oci: <reference>`, resolved to its digest before pulling; the pulled layer is checked against its `dev.devos.intelligence.manifest-sha256` annotation; passed to `federate` with `--input` |
 | Checks before publishing | `verify` with every input (manifest digests re-checked); no input may be excluded; status not `failed` |
-| Reference | `ghcr.io/<owner>/context-<system repository>:system-<key>` plus the moving tag `main-system`; lowercase |
-| `<key>` | SHA-256 of `manifest.commit` (`system:` over every input's name, commit and manifest digest), `manifest.configurationHash` (system.yml) and `name@version` of the federation, joined by newlines. The same key means the same inputs, configuration and federation; the script refuses to overwrite an existing `system-<key>` whose `manifest.json` differs and only moves `main-system` when it is the same |
+| Package | one for every system: `ghcr.io/<owner>/context-systems`; lowercase |
+| Tags (one manifest) | `<system>-<64 hex>`: immutable, the hex of `manifest.commit` (`system:` over every input's name, commit and manifest digest). `<system>-main`: moving, the newest system generation. `<system>.<repository>.<40 hex>`: one per input (repository name from the input's `remoteUrl`, its commit), moving to the newest system generation that contains that commit, so a working copy finds its system with one tag listing and no configuration. `<system>` is the name in system.yml (`lab`) |
+| Immutability | an existing `<system>-<64 hex>` whose `manifest.json` differs (the same inputs federated with another system.yml or another federation version) stops the run; when it is the same, only the moving tags are updated |
 | Manifest `artifactType` | `application/vnd.devos.intelligence.generation.v1` |
 | Layer | `generation.tar.gz`, media type `application/vnd.devos.intelligence.generation.v1.tar+gzip`; tar root is the system generation directory; entries sorted, mtime 0, owner and group 0, gzip without timestamp. Two runs differ only in `run.json`, which is outside the determinism contract |
 | Layer annotation | `dev.devos.intelligence.manifest-sha256` |
-| Manifest annotations | `org.opencontainers.image.source` and `.revision` (the system repository and its commit, the one that holds system.yml), `org.opencontainers.image.ref.name`, `dev.devos.intelligence.engine` (`intelligence-federation`), `dev.devos.intelligence.system-commit` (`manifest.commit`), `dev.devos.intelligence.inputs` (`name=reference@digest` for every input, space separated), `dev.devos.intelligence.federation-image` (image digest); ORAS adds `org.opencontainers.image.created` |
+| Manifest annotations | `org.opencontainers.image.source` and `.revision` (the system repository and its commit, the one that holds system.yml), `org.opencontainers.image.ref.name`, `dev.devos.intelligence.engine` (`intelligence-federation`), `dev.devos.intelligence.generation-type` (`system`), `dev.devos.intelligence.system` (the system name), `dev.devos.intelligence.system-commit` (`manifest.commit`), `dev.devos.intelligence.inputs` (`name=reference@digest` for every input, space separated), `dev.devos.intelligence.federation-image` (image digest); ORAS adds `org.opencontainers.image.created` |
 
-A consumer (the MCP server) pulls `main-system` or a pinned `system-<key>`, checks the layer against
+A consumer (the MCP server) lists the tags of `context-systems`, picks `<system>.<repository>.<commit>` for the working copy's commit (or `<system>-main`, or a pinned `<system>-<64 hex>`), pulls it, checks the layer against
 `dev.devos.intelligence.manifest-sha256`, unpacks it and runs `verify`; `index.sqlite` follows the contract's index
 schema 1.
 
@@ -40,4 +41,5 @@ schema 1.
   Contents read and write on `devos-lab`); without it the step is skipped.
 - `workflow_dispatch`: after a change to `system.yml`, or to publish by hand; `push: false` writes an OCI layout and
   uploads it as a workflow artifact instead of pushing.
-- Runs are serialized; each reads the moving `main-*` tags, so the newest pending run covers the ones it replaced.
+- Runs are serialized; each reads the moving `main-<engine>` tags, so the newest pending run covers the ones it replaced.
+- A change to system.yml with unchanged inputs gives the same `<system>-<64 hex>` with other content and stops at the immutability check; it is published once an input changes.
