@@ -62,7 +62,9 @@ Records keep their input's ids, prefixed with the input name (`leasing/rel:...`,
 | 4 | System generation verifies | `src/generation.ts` | `verify` in `scripts/verify.sh` | done |
 | 5 | Report: precision and recall against the lab ground truth, every miss listed | `docs/reports/` | `evaluate` | done |
 | 5 | eShopOnAbp: Angular and .NET generations of the same commit | `systems/eshoponabp/`, `tests/eshoponabp/` | `evaluate` (local; the inputs are too large for the repository) | done |
-| 6 | System generation format accepted into `devos-intelligence-contract` | proposal | contract owner | waiting |
+| 6 | System generation format accepted into `devos-intelligence-contract` | proposal | contract owner | accepted 2026-10-30; waiting for the v1.2.0 tag, then vendor it and switch `systemFormat` |
+| 6 | Link on `realtime.connection` (v1.2) | `src/links.ts` | lab evaluation | after the v1.2.0 tag |
+| 6 | Rerun the lab evaluation on regenerated lab-core and lab-pricing (package fields) | `tests/lab` | `scripts/verify.sh`, report | waiting for the dotnet regeneration |
 | 6 | OCI inputs (`oci:` in system.yml), wiki pages | | | not started |
 
 ## Gates

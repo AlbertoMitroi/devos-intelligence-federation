@@ -1,9 +1,10 @@
 # System generation format (proposal for devos-intelligence-contract)
 
-Status: **proposal**, written by intelligence-federation on 2026-10-30, sent to the contract coordinator. Nothing here
-is in `devos-intelligence-contract` until its owner accepts it. The federation emits it as `systemFormat: 1.0-proposal`
-and validates it with the schemas in [`schema/system-proposal/`](../schema/system-proposal/) on top of the vendored
-contract schemas (`schema/v1`, contract commit `ea4975a`).
+Status: **accepted by the owner on 2026-10-30** (layout, identity and records as written here; the union is copied).
+A contract session writes it into `devos-intelligence-contract` and tags v1.2.0. Until that tag exists the federation
+keeps emitting `systemFormat: 1.0-proposal` and validates with [`schema/system-proposal/`](../schema/system-proposal/)
+on top of the vendored contract schemas (`schema/v1`, contract commit `ea4975a`). After the tag: vendor it, switch to
+the final format name, link on `realtime.connection`.
 
 It makes the one paragraph "System generation (federation)" of `CONTRACT-v1.1.md` concrete. Every rule is additive: a
 v1.1 consumer that ignores the new files and fields still reads a system generation as a v1 generation whose ids carry a
@@ -69,14 +70,11 @@ symbols).
 `runtime-target`, `dispatch` or `member`, the entity reached, resolution and evidence), `resolution` (weakest),
 `weakest` (`segment` index and resolution).
 
-## Rules asked of the contract
+## Owner decisions (2026-10-30)
 
-1. Accept the layout, identity and records above as the system generation format (proposed version `1.0` of the
-   system format inside contract v1.x), or say what to change.
-2. Decide whether the union is part of a system generation (this proposal) or referenced by digest only. The union makes
-   `index.sqlite` derivable from the NDJSON files (the rule for engine generations); its cost is size (lab 26 MB,
-   eShopOnAbp about 100 MB uncompressed).
-3. Add `realtime.connection` (or a route on `realtime.subscribe`) to the accepted kinds; until then federation cannot use
-   the client's hub path (rule 4: unknown kinds are not linked).
-4. Ask engines to record call-site argument values used as destinations when the sending method is a parameter of a
-   package helper (`IMessageHubUtility.SendToAll("flowUpdated", ...)`), under the same rule as D20.
+1. Format: accepted as written.
+2. The union of the inputs is copied into the system generation.
+3. `realtime.connection` and the other Angular kinds of the v1.2 proposal are accepted for v1.2; federation links on
+   them once v1.2.0 is tagged and vendored.
+4. Engines will record constant call-site argument values used as destinations (for example SignalR method names passed
+   to a package helper); the .NET engine will also emit exact mediator links.

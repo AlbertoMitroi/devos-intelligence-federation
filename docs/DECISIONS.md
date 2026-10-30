@@ -8,7 +8,8 @@
 ## F2: the union of the inputs is part of the system generation
 
 - **Choice:** every input record is copied with a prefixed id (`{input}/...`), so `index.sqlite` is derived from the NDJSON files, as for engine generations.
-- **Cost:** size (lab 26 MB, eShopOnAbp about 100 MB uncompressed). Open question 2 of the format proposal.
+- **Cost:** size (lab 26 MB, eShopOnAbp about 100 MB uncompressed).
+- **Status:** accepted by the owner on 2026-10-30.
 
 ## F3: structural errors exclude an input, dangling references do not
 
@@ -23,6 +24,7 @@
 ## F5: unknown kinds are never linked
 
 - **Choice:** contract rule 4 holds for federation too: `realtime.connection`, `ui.uses_directive`, `ui.module`, `renders` are kept in the union and reported, never used for links, even though their meaning is known from the v1.2 proposal.
+- **Revisit:** the owner accepted these kinds for v1.2 on 2026-10-30; once `devos-intelligence-contract` tags v1.2.0 and it is vendored, they become known kinds and `realtime.connection` is linked.
 
 ## F6: test projects are not a source of cross-repository links
 
