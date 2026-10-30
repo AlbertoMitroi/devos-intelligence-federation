@@ -32,7 +32,7 @@ export interface Federation {
 
 export function loadInputs(config: SystemConfig): InputState[] {
   return config.generations.map((g) => {
-    if (!g.path) return { name: g.name, path: null, oci: g.oci, verification: { ok: false, errors: [`OCI input '${g.oci}' is not supported yet: pull it and pass --input ${g.name}=<directory>`], references: [], notes: [] }, input: null };
+    if (!g.path) return { name: g.name, path: null, oci: g.oci, verification: { ok: false, errors: [`OCI input '${g.oci}' is not read by federation: pull it (ORAS) and pass --input ${g.name}=<directory>`], references: [], notes: [] }, input: null };
     if (!existsSync(g.path)) return { name: g.name, path: g.path, oci: null, verification: { ok: false, errors: [`generation directory not found: ${g.path}`], references: [], notes: [] }, input: null };
     let input: Input | null = null;
     try {

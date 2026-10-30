@@ -15,6 +15,7 @@ Usage:
   verify <system generation> [--input <name>=<generation dir>]...
   evaluate <system generation> --expected <expected-links.yml> [--report <file.md>] [--json <file.json>]
   dump-index <system generation>
+  list-inputs --system <system.yml>   (one line per generation: <name> TAB <oci reference or ->)
   gha                      (GitHub Action mode: INPUT_SYSTEM, INPUT_INPUTS, INPUT_OUTPUT, INPUT_FAIL-ON)
   version [--json]
 
@@ -113,6 +114,12 @@ function main(argv: string[]): number {
       if (json) writeFileSync(json, JSON.stringify(result, null, 2) + '\n');
       const t = result.totals;
       process.stdout.write(`precision ${t.precision} (${t.truePositives}/${t.truePositives + t.falsePositives}), recall ${t.recall} (${t.truePositives}/${t.expected})\n`);
+      return 0;
+    }
+    case 'list-inputs': {
+      const system = one(options, 'system');
+      if (!system) throw new SystemConfigError('list-inputs needs --system');
+      for (const g of readSystem(system).generations) process.stdout.write(`${g.name}\t${g.oci ?? '-'}\n`);
       return 0;
     }
     case 'gha':

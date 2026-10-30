@@ -29,7 +29,10 @@ Local (Node.js 24 or later): `npm ci`, then `node src/cli.ts <command>`.
 | `verify <dir> [--input name=dir]...` | Checksums, schemas, references; with `--input`, the inputs' manifest digests |
 | `evaluate <dir> --expected <expected-links.yml> [--report md] [--json file]` | Precision and recall against hand-written expectations |
 | `dump-index <dir>` | Canonical dump of `index.sqlite` (what determinism compares) |
+| `list-inputs --system <system.yml>` | The generations of a system with their OCI references (for a publisher that pulls them) |
 | `gha` | GitHub Action mode (`action.yml`) |
+
+Images, Action and the OCI layout of a published system generation: [docs/PUBLISHING.md](docs/PUBLISHING.md).
 
 `scripts/verify.sh` is the full local check (test stage, images, the lab twice, verify, evaluate, Action mode).
 

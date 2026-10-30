@@ -15,8 +15,9 @@ export interface SystemRoute {
 
 export interface SystemInputRef {
   name: string;
-  /** Absolute path of the generation directory, or null when the input is an OCI reference (not supported). */
+  /** Absolute path of the generation directory, or null when only an OCI reference is given. */
   path: string | null;
+  /** OCI reference of the published generation (pulled by the caller, for example the devos-lab workflow). */
   oci: string | null;
 }
 
@@ -51,12 +52,13 @@ export function readSystem(file: string, overrides: Map<string, string> = new Ma
     if (!INPUT_NAME.test(name)) fail(`generations[${i}].name '${name}' must match ${INPUT_NAME}`);
     if (names.has(name)) fail(`generations[${i}].name '${name}' is not unique`);
     names.add(name);
+    // Precedence: --input, then path; an OCI reference alone cannot be read (the caller pulls it and passes --input).
+    const oci = typeof g.oci === 'string' ? g.oci : null;
     const override = overrides.get(name);
-    if (override) return { name, path: resolve(override), oci: null };
-    if (typeof g.oci === 'string') return { name, path: null, oci: g.oci };
-    if (typeof g.path !== 'string') fail(`generations[${i}] needs path or oci`);
-    const p = g.path as string;
-    return { name, path: isAbsolute(p) ? p : resolve(base, p), oci: null };
+    if (override) return { name, path: resolve(override), oci };
+    if (typeof g.path === 'string') return { name, path: isAbsolute(g.path) ? g.path : resolve(base, g.path), oci };
+    if (!oci) fail(`generations[${i}] needs path or oci`);
+    return { name, path: null, oci };
   });
   for (const name of overrides.keys()) if (!names.has(name)) fail(`--input ${name}: no generation with that name`);
   const routes: SystemRoute[] = (raw.routes ?? []).map((r: Record<string, unknown>, i: number) => {

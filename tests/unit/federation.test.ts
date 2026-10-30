@@ -111,3 +111,16 @@ test('a tampered input is excluded and reported; a tampered system generation fa
   writeFileSync(join(out, 'graph/links.ndjson'), readFileSync(join(out, 'graph/links.ndjson'), 'utf8').replace('"exact"', '"candidate"'));
   assert.match(verifySystemGeneration(out).errors.join('\n'), /checksum mismatch/);
 });
+
+test('system.yml: --input wins over path, path over an OCI reference, which is kept for the inventory', () => {
+  const dir = tempDir();
+  const f = join(dir, 'system.yml');
+  writeFileSync(f, 'system: s\ngenerations:\n  - { name: a, path: gen/a, oci: ghcr.io/o/context-a:main-dotnet }\n  - { name: b, oci: ghcr.io/o/context-b:main-angular }\n');
+  const plain = readSystem(f);
+  assert.equal(plain.generations[0].path, join(dir, 'gen/a'));
+  assert.equal(plain.generations[0].oci, 'ghcr.io/o/context-a:main-dotnet');
+  assert.equal(plain.generations[1].path, null);
+  const overridden = readSystem(f, new Map([['b', join(dir, 'pulled/b')]]));
+  assert.equal(overridden.generations[1].path, join(dir, 'pulled/b'));
+  assert.equal(overridden.generations[1].oci, 'ghcr.io/o/context-b:main-angular');
+});
