@@ -12,7 +12,7 @@ Date 2026-10-30. intelligence-federation 0.1.0, system format `1.0-proposal`, co
 | Determinism | two runs byte-identical (only `run.json` differs), `index.sqlite` byte-identical too, dumps identical; host Node 26 and image Node 24 give the same bytes | `scripts/verify.sh`, `diff -r` |
 | Action mode | outputs written, output owned by the workspace owner | `scripts/verify.sh` (simulated workspace) |
 | eShopOnAbp system generation verifies | **ok** (status `partial`) | `verify`, local only |
-| CI on amd64 and arm64, byte comparison across architectures | see the CI run of the merge commit | `.github/workflows/ci.yml` |
+| CI on amd64 and arm64, byte comparison across architectures | pass: run 41022234231 on 11b463d (verify.sh and the Action on both architectures, amd64 and arm64 system generations byte-identical, actionlint) | `.github/workflows/ci.yml` |
 
 Not checked: repository blob ids (the repositories are not mounted), the published image and Action (no release yet),
 OCI inputs (not supported).
@@ -124,6 +124,16 @@ None.
 | All six package resolutions: `versionMatch` `unknown` instead of `exact` / `different`; resolution `candidate` | miss (gate 3) | The lab-core and lab-pricing generations have `packageId`, `packageVersion` and `isPackable` null for every project (eShopOnAbp's generation has them), with no diagnostic. Federation falls back to the assembly name and cannot compare versions, so the deliberate `Pricing.Client` 1.0.0 (tools/Leasing.QuoteBackfill) vs 1.1.0 mismatch is not shown. With the fields present (unit test `federation links HTTP, package calls with version mismatch`) the resolution is `exact` and the mismatch is reported as `different`. | dotnet engine; reported to the coordinator on 2026-10-30 |
 | Four leasing → pricing HTTP links are `candidate`, not `exact` | weaker resolution, not a miss | The package fallback above, plus `GetQuoteAsync`, `RecalculateQuoteAsync` and `GetRateCardAsync` are `candidate` calls in their own generations (the URL is built with a parameter). | dotnet engine data; resolves with the regeneration |
 | Two SignalR links are `candidate` | weaker resolution | The Angular generation leaves `realtime.subscribe.route` empty and keeps the hub path in `realtime.connection`, a v1.2 proposal kind that a v1.1 consumer must not link on; federation reaches the hub through the only route from `web` in `system.yml`. | contract (accept the kind or a route on the subscription) |
+
+What contract v1.2 would buy for SignalR (kept to v1.1 on the coordinator's instruction, 2026-10-30): with
+`realtime.connection` accepted, the two `web` subscriptions would reach `/hubs/leasing` through the client's own
+`environment.apiUrl` + `environment.hubPath` instead of the single-route fallback, removing one of the two `candidate`
+causes of `signalr-flow-updated` and `signalr-task-assigned`. The two false positives stay until the dotnet engine
+records the method-name argument at the `IMessageHubUtility` call sites; v1.2 alone does not remove them.
+
+When the regenerated lab-core and lab-pricing generations carry `packageId` and `packageVersion`, the expected result is
+`exact` resolutions for all six packages and `versionMatch: different` for `Pricing.Client` 1.0.0; the unit test
+`federation links HTTP, package calls with version mismatch` checks that path today on synthetic generations.
 
 Gate 4 on the lab: every HTTP call of lab-web reaches its lab-leasing endpoint (15/15 exact); every pricing client
 call reaches its lab-pricing endpoint (4/4, candidate); both Kafka records reach their consumer (2/2 exact); the Kafka

@@ -32,3 +32,7 @@ Local (Node.js 24 or later): `npm ci`, then `node src/cli.ts <command>`.
 | `gha` | GitHub Action mode (`action.yml`) |
 
 `scripts/verify.sh` is the full local check (test stage, images, the lab twice, verify, evaluate, Action mode).
+
+## License
+
+MIT, see [LICENSE](LICENSE).
