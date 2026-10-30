@@ -54,7 +54,7 @@ class CallGraph {
       const from = observations.get((l.from as Rec).observation as string);
       const to = observations.get((l.to as Rec).observation as string);
       const sender = (from?.sender ?? from?.caller ?? from?.publisher) as string | undefined;
-      const handler = to?.handler as string | undefined;
+      const handler = (to?.handlerMethod ?? to?.handler) as string | undefined;
       if (!sender || !handler) continue;
       const ev = (l.evidence as string[]).map((x) => pref(input.name, x));
       add(sender, { to: handler, kind: messaging ? 'message' : 'dispatch', resolution: l.resolution as Resolution, evidence: ev, link: pref(input.name, l.id) });
@@ -110,6 +110,7 @@ function entryEntities(link: Rec, input: Input): string[] {
   const out: string[] = [];
   if (typeof to.entity === 'string') out.push(unprefix(to.entity).id);
   const obs = input.set.observations.find((o) => pref(input.name, o.id) === to.observation);
+  if (obs && typeof obs.handlerMethod === 'string') out.push(obs.handlerMethod as string);
   if (obs && typeof obs.handler === 'string') out.push(obs.handler as string);
   return [...new Set(out)];
 }

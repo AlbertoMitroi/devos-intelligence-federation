@@ -13,25 +13,26 @@ import { dumpIndex, writeIndex } from './sqlite.ts';
 import { union } from './union.ts';
 
 export const ENGINE = { name: 'intelligence-federation', version: '0.1.0' };
-export const SCHEMA_VERSION = '1.1';
-export const SYSTEM_FORMAT = '1.0-proposal';
+export const SCHEMA_VERSION = '1.2';
+export const SYSTEM_FORMAT = '1.0';
 
 export function inputRecord(s: InputState): Rec {
-  const m = s.input?.manifest;
+  const loaded = s.input ?? s.loaded ?? null;
+  const m = loaded?.manifest;
   const v = s.verification;
   return {
     id: s.name,
     recordType: 'input',
     source: s.path ? 'path' : 'oci',
     oci: s.oci,
-    repository: m ? { remoteUrl: m.repository?.remoteUrl ?? null } : null,
+    repository: { remoteUrl: m?.repository?.remoteUrl ?? null },
     commit: m?.commit ?? null,
     dirty: m?.dirty ?? null,
     engine: m?.engine ?? null,
     imageDigest: m?.imageDigest ?? null,
     schemaVersion: m?.schemaVersion ?? null,
     status: m?.status ?? null,
-    manifestSha256: s.input?.manifestSha256 ?? null,
+    manifestSha256: loaded?.manifestSha256 ?? null,
     included: !!s.input,
     verification: {
       result: !v.ok ? 'failed' : v.references.length ? 'ok-with-defects' : 'ok',
@@ -109,7 +110,6 @@ export function writeSystemGeneration(fed: Federation, out: string, startedAt: n
     writeFileSync(join(out, path), text);
   }
   const configurationHash = sha256Hex(canonical(fed.config.canonical));
-  writeIndex(join(out, 'index.sqlite'), set, { system: fed.config.system, engine: `${ENGINE.name}@${ENGINE.version}`, schemaVersion: SCHEMA_VERSION, systemFormat: SYSTEM_FORMAT, configurationHash }, { inputs, packages: fed.packages, traces: fed.traces });
 
   const excluded = fed.states.filter((s) => !s.input);
   const partialInputs = fed.inputs.filter((i) => i.manifest.status === 'partial' || fed.states.find((s) => s.name === i.name)!.verification.references.length);
@@ -119,6 +119,14 @@ export function writeSystemGeneration(fed: Federation, out: string, startedAt: n
   );
   const summary: Record<string, number> = { total: 0, semantic: 0, syntax: 0, failed: 0, notAnalyzed: 0 };
   for (const i of fed.inputs) for (const [k, v] of Object.entries((i.manifest.coverage?.summary as Record<string, number> | undefined) ?? {})) summary[k] = (summary[k] ?? 0) + (typeof v === 'number' ? v : 0);
+  const commit = `system:${sha256Hex(canonical(inputs.map((i) => [i.id, i.commit, i.manifestSha256])))}`;
+  // index.sqlite before the manifest, which lists it (meta keys: contract v1.2, "Index and query").
+  writeIndex(
+    join(out, 'index.sqlite'),
+    set,
+    { schemaVersion: SCHEMA_VERSION, commit, engine: `${ENGINE.name}@${ENGINE.version}`, indexSchema: '1', status, coverage: canonical(summary), generationType: 'system', system: fed.config.system, systemFormat: SYSTEM_FORMAT, configurationHash },
+    { inputs, packages: fed.packages, traces: fed.traces },
+  );
   const manifest = {
     schemaVersion: SCHEMA_VERSION,
     generationType: 'system',
@@ -130,7 +138,7 @@ export function writeSystemGeneration(fed: Federation, out: string, startedAt: n
     imageDigest: process.env.FEDERATION_IMAGE_DIGEST || 'unknown',
     // A system has no single repository: the commit is a content hash of the inputs' manifests.
     repository: { remoteUrl: null },
-    commit: `system:${sha256Hex(canonical(inputs.map((i) => [i.id, i.commit, i.manifestSha256])))}`,
+    commit,
     dirty: fed.inputs.some((i) => i.manifest.dirty === true),
     configurationHash,
     analysisContexts: fed.inputs.flatMap((i) => ((i.manifest.analysisContexts as string[] | undefined) ?? []).map((c) => `${i.name}/${c}`)).sort(compareOrdinal),
@@ -153,11 +161,11 @@ export function writeSystemGeneration(fed: Federation, out: string, startedAt: n
   return { status, counts };
 }
 
-const proposalCache = new Map<string, Record<string, any>>();
-/** System-only schemas (schema/system-proposal): the format proposed to the contract owner. */
-function proposal(name: string): Record<string, any> {
-  let s = proposalCache.get(name);
-  if (!s) proposalCache.set(name, (s = JSON.parse(readFileSync(join(SCHEMA_DIR, '..', 'system-proposal', `${name}.schema.json`), 'utf8'))));
+const systemSchemaCache = new Map<string, Record<string, any>>();
+/** System-only schemas (schema/system/v1, contract v1.2). */
+function systemSchema(name: string): Record<string, any> {
+  let s = systemSchemaCache.get(name);
+  if (!s) systemSchemaCache.set(name, (s = JSON.parse(readFileSync(join(SCHEMA_DIR, '..', 'system', 'v1', `${name}.schema.json`), 'utf8'))));
   return s!;
 }
 
@@ -175,7 +183,7 @@ export function verifySystemGeneration(dir: string, inputDirs: Map<string, strin
   if (!existsSync(manifestPath)) return { ok: false, errors: ['manifest.json is missing: not a complete system generation'], notes };
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, any>;
   errors.push(...validate(schemaFor('manifest', true), manifest).map((e) => `manifest.json ${e}`));
-  errors.push(...validate(proposal('system-manifest'), manifest).map((e) => `manifest.json ${e}`));
+  errors.push(...validate(systemSchema('system-manifest'), manifest).map((e) => `manifest.json ${e}`));
   if (String(manifest.schemaVersion ?? '').split('.')[0] !== '1') errors.push(`schemaVersion ${manifest.schemaVersion}: only major 1 is supported`);
   for (const cap of manifest.requiredCapabilities ?? []) errors.push(`unknown required capability '${cap}': refusing the generation`);
   const listed = new Map<string, { sha256: string; size: number }>((manifest.files ?? []).map((f: any) => [f.path, f]));
@@ -209,10 +217,10 @@ export function verifySystemGeneration(dir: string, inputDirs: Map<string, strin
         if (r.input !== input) errors.push(`${FILES[key]} ${r.id}: input field ${String(r.input)} does not match the id prefix`);
       }
     }
-  for (const i of inputs) errors.push(...validate(proposal('input'), i).map((e) => `inputs.ndjson ${i.id}: ${e}`));
+  for (const i of inputs) errors.push(...validate(systemSchema('input'), i).map((e) => `inputs.ndjson ${i.id}: ${e}`));
   const linkIds = new Set(set.links.map((l) => l.id));
   for (const l of set.links.filter((x) => x.scope === 'system')) {
-    errors.push(...validate(proposal('system-link'), l).map((e) => `graph/links.ndjson ${l.id}: ${e}`));
+    errors.push(...validate(systemSchema('system-link'), l).map((e) => `graph/links.ndjson ${l.id}: ${e}`));
     for (const side of ['from', 'to'] as const) {
       const e = l[side] as Rec | null;
       if (e && !names.has(e.input as string)) errors.push(`link ${l.id}: unknown ${side} input ${String(e.input)}`);
@@ -223,12 +231,12 @@ export function verifySystemGeneration(dir: string, inputDirs: Map<string, strin
   const packages = readNdjson(join(dir, SYSTEM_FILES.packages));
   for (let i = 1; i < packages.length; i++) if (compareOrdinal(packages[i - 1].id, packages[i].id) >= 0) errors.push(`graph/packages.ndjson: ids not sorted and unique at ${packages[i].id}`);
   for (const p of packages) {
-    errors.push(...validate(proposal('package-resolution'), p).map((e) => `graph/packages.ndjson ${p.id}: ${e}`));
+    errors.push(...validate(systemSchema('package-resolution'), p).map((e) => `graph/packages.ndjson ${p.id}: ${e}`));
     if (!names.has((p.consumer as Rec).input as string)) errors.push(`packages.ndjson ${p.id}: unknown consumer input`);
   }
   const traces = readNdjson(join(dir, SYSTEM_FILES.traces));
   for (const t of traces) {
-    errors.push(...validate(proposal('trace'), t).map((e) => `graph/traces.ndjson ${t.id}: ${e}`));
+    errors.push(...validate(systemSchema('trace'), t).map((e) => `graph/traces.ndjson ${t.id}: ${e}`));
     for (const id of t.links as string[]) if (!linkIds.has(id)) errors.push(`graph/traces.ndjson ${t.id}: unknown link ${id}`);
   }
   // Optional: the inputs themselves, against the manifest digests recorded in inputs.ndjson.

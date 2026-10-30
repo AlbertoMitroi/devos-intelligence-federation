@@ -3,7 +3,7 @@
 import { existsSync } from 'node:fs';
 import { compareOrdinal } from './util/canonical.ts';
 import { Input, verifyInput, type InputVerification } from './input.ts';
-import { linkHttp, linkMessaging, linkRealtime, type LinkContext, type LinkerResult } from './links.ts';
+import { linkDispatch, linkHttp, linkMessaging, linkRealtime, type LinkContext, type LinkerResult } from './links.ts';
 import { PackageResolver } from './packages.ts';
 import type { Rec } from './records.ts';
 import type { SystemConfig } from './system.ts';
@@ -15,6 +15,8 @@ export interface InputState {
   oci: string | null;
   verification: InputVerification;
   input: Input | null;
+  /** The loaded generation, also when verification excluded it (its manifest is still inventoried). */
+  loaded?: Input | null;
 }
 
 export interface Federation {
@@ -39,7 +41,7 @@ export function loadInputs(config: SystemConfig): InputState[] {
       return { name: g.name, path: g.path, oci: null, verification: { ok: false, errors: [`generation could not be read: ${(e as Error).message}`], references: [], notes: [] }, input: null };
     }
     const verification = verifyInput(g.path, input.set);
-    return { name: g.name, path: g.path, oci: null, verification, input: verification.ok ? input : null };
+    return { name: g.name, path: g.path, oci: null, verification, input: verification.ok ? input : null, loaded: input };
   });
 }
 
@@ -49,7 +51,7 @@ export function federate(config: SystemConfig, states: InputState[]): Federation
   // Routes to or from an excluded input are dropped; the system generation reports the exclusion.
   const routes = config.routes.filter((r) => byName.has(r.from) && byName.has(r.to));
   const ctx: LinkContext = { config: { ...config, routes }, inputs, byName, resolver: new PackageResolver(inputs) };
-  const results = [linkHttp(ctx), linkMessaging(ctx), linkRealtime(ctx)];
+  const results = [linkHttp(ctx), linkMessaging(ctx), linkRealtime(ctx), linkDispatch(ctx)];
   // Every package entity used by an input whose producer is in the system gets its implemented_by_package link,
   // also when no call through it reaches an observation.
   for (const input of inputs)

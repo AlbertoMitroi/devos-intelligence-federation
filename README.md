@@ -6,7 +6,7 @@ repositories (HTTP, messaging, real time, through client packages), end-to-end t
 system context packs, manifest written last.
 
 **Status: Step 1 done** (lab and eShopOnAbp validated, see [docs/reports/step-1-lab-and-eshoponabp.md](docs/reports/step-1-lab-and-eshoponabp.md)).
-Plan: [docs/PLAN.md](docs/PLAN.md). Output format (proposal to the contract owner): [docs/SYSTEM-GENERATION.md](docs/SYSTEM-GENERATION.md).
+Plan: [docs/PLAN.md](docs/PLAN.md). Output format: contract v1.2 (`devos-intelligence-contract` tag `v1.2.0`, section "System generation"), vendored in `schema/`; design notes in [docs/SYSTEM-GENERATION.md](docs/SYSTEM-GENERATION.md).
 Decisions: [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Run

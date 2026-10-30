@@ -1,7 +1,7 @@
 # intelligence-federation: plan
 
-Step 0 wrote the plan; Step 1 (this revision, 2026-10-30) refines it against what the engines emit now and implements
-it. Changes from Step 0 are listed in "Refinements" at the end.
+Step 0 wrote the plan; Step 1 (2026-10-30) refined it against what the engines emit and implemented it; the same day
+the federation moved to contract v1.2.0 (vendored, system format `1.0`). Changes from Step 0 are listed in "Refinements" at the end.
 
 ## Why a separate product
 
@@ -35,10 +35,11 @@ Only the NDJSON files and `manifest.json` of an input are read (the contract); a
 1. **Verify inputs**: manifest schema, major 1, known required capabilities, checksums, unlisted files, record schemas, sorted unique ids. A structural failure excludes the input; dangling references inside an input (an id naming no record) are reported as input defects and the input is still used. Every input gets an `inputs.ndjson` record with the outcome.
 2. **Inventory** (`inputs.ndjson`): repository, commit, dirty flag, engine and version, image digest, schema version, status, manifest sha256, verification result.
 3. **Package to source**: for every `dotnet:pkg:{id}@{version}:{assembly}:{docId}` entity used by one input, find the input whose project has `packageId == id` (contract v1.1) and resolve the symbol to `dotnet:{project}:{docId}`. When the producing generation has no `packageId` (seen in the lab generations of 2026-10-30), fall back to the non-test project whose assembly name equals the package id and the package's assembly, with resolution `candidate` and the reason. `versionMatch`: `exact` when the producing project's `packageVersion` equals the consumed version, `different` with both versions, `unknown` when the producer has no version. Same for `ts:pkg:` and `npmName`/`npmVersion`. Records: `graph/packages.ndjson` (one per consumer, package and version) and one `implemented_by_package` link per package symbol used.
-4. **Cross-repository links**, from normalized fields only (v1.1 kinds; unknown kinds such as `realtime.connection` or `ui.*` are kept and never linked):
+4. **Cross-repository links**, from normalized fields only (contract v1.2 kinds; kinds newer than that are kept and never linked). A destination that is a helper parameter (`destinationParameter`) takes the value of the matching `call.argument` at each call site, one link per value (C7):
    - HTTP: `http.call` to `http.endpoint` of another input. The target inputs come from `routes` whose `baseUrl` is the call's `baseAddress.key` (or one of its values); without a route, every other input is searched and the link is at most `candidate`. Method, then canonical route with route precedence (most literal segments; a call parameter against an endpoint literal is `candidate`); a base address path is prepended when the configured URL has one. A call reached through a package (consumer call site → package symbol → producer source → implementations → bounded calls → `http.call`) is attributed to the consumer's call site and routed with the consumer's routes.
    - Messaging: publish to subscribe across inputs by contract identity, then transport and destination when both sides know them. A publish with a subscriber of the same contract in its own input, or with an engine link there, is internal (the engine owns it). A publish with no subscriber anywhere in the system is kept as `unresolved` with the reason (the consumer may be outside the system); in-memory transports are left out.
-   - Real time: `realtime.send` (direct or through a package) to `realtime.subscribe` by hub route and method name. A subscription without a route reaches the hubs of the only input its routes lead to (`candidate`); a send without a method name matches every subscription on the hub (`candidate`, reason recorded).
+   - Real time: a `realtime.subscribe` belongs to the hub whose route equals its route, after its `realtime.connection`'s base address routes it to an input; `pushes_to` from that hub's `realtime.send` (direct or through a package) with the same method name, compared case-insensitively. A subscription without a route reaches the hubs of the only input its routes lead to (`candidate`); a send without a method name (and no call-site value) matches every subscription on the hub (`candidate`, reason recorded).
+   - In-process: `inprocess.send` to `inprocess.handler` in another input by mechanism, pattern and request type (package symbols resolved to source), contract v1.2 rules 1 to 6.
    - Workflow across inputs: no input emits `workflow.handler` yet; deferred (see Refinements).
    - Test projects (a project whose packages include a test SDK) are never a source of cross-repository links; their sites are counted in diagnostics.
 5. **Traces**: chains of two or more cross-repository links, joined inside the input between them by a breadth-first path (at most 8 steps) over calls, implementations of called members, possible runtime targets and the input's own `dispatches_to` links. Each segment keeps its resolution and evidence; the trace takes the weakest and records which segment it is.
@@ -62,8 +63,10 @@ Records keep their input's ids, prefixed with the input name (`leasing/rel:...`,
 | 4 | System generation verifies | `src/generation.ts` | `verify` in `scripts/verify.sh` | done |
 | 5 | Report: precision and recall against the lab ground truth, every miss listed | `docs/reports/` | `evaluate` | done |
 | 5 | eShopOnAbp: Angular and .NET generations of the same commit | `systems/eshoponabp/`, `tests/eshoponabp/` | `evaluate` (local; the inputs are too large for the repository) | done |
-| 6 | System generation format accepted into `devos-intelligence-contract` | proposal | contract owner | accepted 2026-10-30; waiting for the v1.2.0 tag, then vendor it and switch `systemFormat` |
-| 6 | Link on `realtime.connection` (v1.2) | `src/links.ts` | lab evaluation | after the v1.2.0 tag |
+| 6 | System generation format in the contract: vendor v1.2.0, `systemFormat: 1.0`, `schemaVersion: 1.2`, `meta.commit` and index schema 1 | `schema/`, `src/generation.ts`, `src/sqlite.ts` | verify, unit tests | done |
+| 6 | Real time through `realtime.connection`, method names case-insensitive | `src/links.ts` | unit test (contract example) | done; lab inputs do not carry a connection route yet |
+| 6 | Call-site argument substitution (C7) for real-time methods, message destinations, HTTP routes | `src/arguments.ts` | unit tests | done; no input emits `call.argument` yet |
+| 6 | `dispatches_to` across inputs (C8) | `src/links.ts` | unit test | done |
 | 6 | Rerun the lab evaluation on regenerated lab-core and lab-pricing (package fields) | `tests/lab` | `scripts/verify.sh`, report | waiting for the dotnet regeneration |
 | 6 | OCI inputs (`oci:` in system.yml), wiki pages | | | not started |
 

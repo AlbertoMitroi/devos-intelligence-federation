@@ -214,3 +214,24 @@ truth was written for messaging here, so those two are not scored.
 - Gate 3 on the lab waits for regenerated lab-core and lab-pricing generations with `packageId` and `packageVersion`.
 - The system generation format is a proposal (`docs/SYSTEM-GENERATION.md`), not yet in the contract.
 - OCI inputs, wiki pages, workflow links across inputs (no generation emits `workflow.handler`).
+
+## Addendum: contract v1.2.0 (2026-10-30, same day)
+
+The federation now vendors `devos-intelligence-contract` `v1.2.0` (`schema/v1` with `kinds/`, `schema/system/v1`,
+`schema/index/v1`), emits `schemaVersion: 1.2` and `systemFormat: 1.0`, builds `index.sqlite` from the contract's
+`index.sql` (sections base and system, `meta` with `commit`, `indexSchema`, `status`, `coverage`, `generationType`,
+`system`, `systemFormat`, `configurationHash`), places observations at their `site`, links real time through
+`realtime.connection` with case-insensitive method names, substitutes `call.argument` values (C7) and emits
+`dispatches_to` across inputs (C8).
+
+| Check | Result |
+|---|---|
+| Unit tests | 11 pass, 4 new on the contract's examples: the SignalR pair `flowUpdated` / `taskAssigned` through `IMessageHubUtility` with call-site values and a lower-case subscription gives exactly two `exact` links (four `candidate` links without the values); dispatch across inputs gives `exact`, `ambiguous`, `unresolved` and `candidate` as rules 2 to 4 say; substituted routes are canonicalized |
+| `scripts/verify.sh` on the lab fixture | ok: two runs byte-identical, verify ok, precision 0.920, recall 1.000 (unchanged) |
+| eShopOnAbp | verify ok, precision 1.000, recall 1.000 (unchanged) |
+
+The lab numbers do not move yet because the inputs are still v1.1: the web generation's `realtime.connection` has no
+route (`{environment.hubPath}`), no input carries `call.argument` or `site`, and lab-core and lab-pricing still lack
+`packageId`. The `.NET` generations in `_generations/` were rewritten at 10:17 (new lab commits, `wiki/` and
+`index.sqlite` added); they still have no `packageId`, and federating them gives the same precision and recall. The
+evaluation is rerun when the coordinator announces the regenerated generations.

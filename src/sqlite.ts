@@ -1,11 +1,13 @@
-// index.sqlite over the union: the same tables and columns as the engines' index (angular-intelligence
-// src/artifacts/sqlite.ts, which the MCP server reads), so one reader serves a repository generation and a system
-// generation. Ids carry their input prefix. System additions are extra tables (inputs, packages, traces) and links
-// whose endpoint is an entity (implemented_by_package) store that entity id in from_obs / to_obs. Derived data: the
+// index.sqlite over the union: the tables of the contract's index schema 1 (schema/index/v1/index.sql, sections base
+// and system), so one reader (the MCP server) serves repository and system generations. Ids carry their input prefix;
+// links whose side is an entity (implemented_by_package) store that entity in from_obs / to_obs. Derived data: the
 // NDJSON files stay the source of truth; a canonical dump (sorted rows) is what must be identical across runs.
 import { DatabaseSync } from 'node:sqlite';
 import type { RecordSet, Rec } from './records.ts';
-import { canonical } from './util/canonical.ts';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { SCHEMA_DIR } from './artifacts/schema.ts';
+import { canonical, compareOrdinal } from './util/canonical.ts';
 
 export function sqliteInfo(): { version: string; fts5: boolean } {
   const db = new DatabaseSync(':memory:');
@@ -20,29 +22,18 @@ export function sqliteInfo(): { version: string; fts5: boolean } {
   return { version, fts5 };
 }
 
-const SCHEMA = `
-create table meta(key text primary key, value text not null);
-create table entities(id text primary key, kind text, name text, container text, signature text, project text, origin text, json text);
-create table declarations(id text primary key, entity text, context text, path text, line integer, col integer);
-create table evidence(id text primary key, path text, line integer, col integer, end_line integer, end_col integer, method text, context text, text text);
-create table relations(id text primary key, kind text, from_id text, to_id text, usage text, resolution text, context text, path text, line integer, declared_target text);
-create table observations(id text primary key, kind text, project text, path text, line integer, json text);
-create table links(id text primary key, kind text, via text, from_obs text, to_obs text, resolution text, reason text);
-create table diagnostics(id text primary key, severity text, code text, scope text, state text, message text);
-create table projects(id text primary key, record_type text, path text, json text);
-create index relations_from on relations(from_id, kind);
-create index relations_to on relations(to_id, kind);
-create index declarations_entity on declarations(entity);
-create index declarations_location on declarations(path, line);
-create index entities_name on entities(name);
-create index observations_kind on observations(kind);
-create index links_from on links(from_obs);
-create index links_to on links(to_obs);
-create virtual table search using fts5(ref unindexed, kind unindexed, text);
-create table inputs(id text primary key, json text);
-create table packages(id text primary key, package_id text, version text, consumer text, producer text, version_match text, resolution text, json text);
-create table traces(id text primary key, start text, end text, resolution text, json text);
-`;
+/** Statements of the given sections of the vendored schema/index/v1/index.sql (contract v1.2, index schema 1). */
+function indexStatements(sections: string[]): string[] {
+  const text = readFileSync(join(SCHEMA_DIR, '..', 'index', 'v1', 'index.sql'), 'utf8');
+  const out: string[] = [];
+  let section = '';
+  for (const line of text.split('\n')) {
+    const header = /^-- (base|evidence|system)$/.exec(line.trim());
+    if (header) section = header[1];
+    else if (sections.includes(section) && line.trim() && !line.startsWith('--')) out.push(line.trim());
+  }
+  return out;
+}
 
 export interface SystemExtras {
   inputs: Rec[];
@@ -53,11 +44,21 @@ export interface SystemExtras {
 export function writeIndex(path: string, set: RecordSet, meta: Record<string, string>, extras: SystemExtras): void {
   const db = new DatabaseSync(path);
   db.exec('pragma journal_mode = off; pragma synchronous = off;');
-  db.exec(SCHEMA);
+  for (const statement of indexStatements(['base', 'system'])) db.exec(statement);
   db.exec('begin');
   const evidence = new Map<string, Rec>(set.evidence.map((e) => [e.id, e]));
   const snippets = new Map<string, Rec>(set.snippets.map((s) => [s.id, s]));
-  const firstEvidence = (ids: unknown) => evidence.get((ids as string[])[0]);
+  // The first evidence by location (path ordinal, start line, start column), or the observation's `site`.
+  const firstEvidence = (ids: unknown, site?: unknown) => {
+    if (typeof site === 'string' && evidence.has(site)) return evidence.get(site);
+    const list = (ids as string[]).map((id) => evidence.get(id)).filter((e): e is Rec => !!e);
+    list.sort((a, b) => {
+      const sa = a.span as { startLine: number; startColumn: number };
+      const sb = b.span as { startLine: number; startColumn: number };
+      return compareOrdinal(a.path as string, b.path as string) || sa.startLine - sb.startLine || sa.startColumn - sb.startColumn;
+    });
+    return list[0];
+  };
   const insertMeta = db.prepare('insert into meta values (?, ?)');
   for (const [k, v] of Object.entries(meta).sort()) insertMeta.run(k, v);
   const ent = db.prepare('insert into entities values (?, ?, ?, ?, ?, ?, ?, ?)');
@@ -86,7 +87,7 @@ export function writeIndex(path: string, set: RecordSet, meta: Record<string, st
   }
   const obs = db.prepare('insert into observations values (?, ?, ?, ?, ?, ?)');
   for (const o of set.observations) {
-    const e = firstEvidence(o.evidence);
+    const e = firstEvidence(o.evidence, o.site);
     const span = e?.span as { startLine: number } | undefined;
     obs.run(o.id, o.kind as string, o.project as string, (e?.path as string) ?? null, span?.startLine ?? null, canonical(o));
   }

@@ -1,10 +1,9 @@
 # System generation format (proposal for devos-intelligence-contract)
 
-Status: **accepted by the owner on 2026-10-30** (layout, identity and records as written here; the union is copied).
-A contract session writes it into `devos-intelligence-contract` and tags v1.2.0. Until that tag exists the federation
-keeps emitting `systemFormat: 1.0-proposal` and validates with [`schema/system-proposal/`](../schema/system-proposal/)
-on top of the vendored contract schemas (`schema/v1`, contract commit `ea4975a`). After the tag: vendor it, switch to
-the final format name, link on `realtime.connection`.
+Status: **contract v1.2** (tag `v1.2.0`, commit `2828fd6`): the normative text is `docs/CONTRACT-v1.2.md`, section
+"System generation", with the schemas in `schema/system/v1/`, vendored here in `schema/` (see `schema/VENDOR.json`).
+The federation emits `systemFormat: 1.0` and `schemaVersion: 1.2`. This file keeps the design notes of the proposal
+that the contract adopted; where they differ, the contract wins.
 
 It makes the one paragraph "System generation (federation)" of `CONTRACT-v1.1.md` concrete. Every rule is additive: a
 v1.1 consumer that ignores the new files and fields still reads a system generation as a v1 generation whose ids carry a

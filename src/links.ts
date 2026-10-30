@@ -1,7 +1,9 @@
 // Cross-repository links (PLAN pipeline 4), from normalized fields only: HTTP calls to endpoints, messages from
-// publishers to subscribers, real-time sends to client subscriptions. A call, send or publish made inside a resolved
-// package is attributed to the consumer's call site.
+// publishers to subscribers, real-time sends to client subscriptions, in-process sends to handlers. A call, send or
+// publish made inside a resolved package is attributed to the consumer's call site; a destination that is a parameter
+// of a helper takes the constant recorded at the call site (contract v1.2, C7).
 import { compareOrdinal, recordId } from './util/canonical.ts';
+import { canonicalRoute, withArguments, type SiteArgument } from './arguments.ts';
 import type { Input } from './input.ts';
 import { pref, weakest, type EntityResolution, type PackageResolver, type Resolution } from './packages.ts';
 import type { Rec } from './records.ts';
@@ -32,9 +34,11 @@ export interface Site {
   project: string;
   evidence: string[];
   through: EntityResolution | null;
+  /** call-site value of the observation's destination parameter (C7) */
+  argument?: SiteArgument;
 }
 
-const ROLE: Record<string, string> = { 'http.call': 'caller', 'realtime.send': 'sender', 'messaging.publish': 'publisher' };
+const ROLE: Record<string, string> = { 'http.call': 'caller', 'realtime.send': 'sender', 'messaging.publish': 'publisher', 'inprocess.send': 'sender' };
 
 /** Link part resolution: an observation that is `unresolved` about some field still names a real site. */
 function part(r: unknown): Resolution {
@@ -169,6 +173,7 @@ function siteFrom(s: Site, kind: string): Rec {
     project: s.project,
     entity: s.entity ? pref(s.input.name, s.entity) : null,
   };
+  if (s.argument) from.argument = { observation: s.argument.observation, value: s.argument.value, valueSource: s.argument.valueSource };
   if (s.through) {
     from.through = {
       package: s.through.link.package,
@@ -255,9 +260,9 @@ export function linkHttp(ctx: LinkContext): LinkerResult {
   }
   let skippedNoBase = 0;
   let unmatchedNoRoute = 0;
-  for (const s of sites(ctx, 'http.call', notes)) {
+  for (const s of sites(ctx, 'http.call', notes).flatMap((x) => withArguments(x, ['route', 'urlTemplate']))) {
     const o = s.observation;
-    const route = o.canonicalRoute as string | null | undefined;
+    const route = s.argument?.value ? canonicalRoute(s.argument.value) : (o.canonicalRoute as string | null | undefined);
     if (typeof route !== 'string') continue;
     const ba = o.baseAddress as Rec | null | undefined;
     // Which inputs can answer: routes in system.yml from the input that configures the base address.
@@ -316,7 +321,7 @@ export function linkHttp(ctx: LinkContext): LinkerResult {
         continue;
       }
       links.push({
-        id: recordId('lnk', { kind: 'configured_route', from: from.observation, entity: from.entity, to: null }),
+        id: recordId('lnk', { kind: 'configured_route', from: from.observation, entity: from.entity, to: null, argument: s.argument?.observation }),
         kind: 'configured_route',
         via: 'http',
         scope: 'system',
@@ -334,13 +339,17 @@ export function linkHttp(ctx: LinkContext): LinkerResult {
     for (const b of best) {
       const ep = b.ep;
       const to = { input: ep.input.name, observation: pref(ep.input.name, ep.obs.id), kind: 'http.endpoint', project: ep.obs.project, entity: typeof ep.obs.handler === 'string' ? pref(ep.input.name, ep.obs.handler as string) : null };
-      const resolution = weakest(part(o.resolution), part(ep.obs.resolution), routeRes, s.through?.resolution, matchRes);
+      // A route substituted from the call site replaces the template's own (weaker) resolution.
+      const callRes = s.argument?.value ? 'exact' : part(o.resolution);
+      const argumentRes: Resolution | null = s.argument ? (s.argument.value ? 'exact' : 'candidate') : null;
+      const resolution = weakest(callRes, part(ep.obs.resolution), routeRes, s.through?.resolution, matchRes, argumentRes);
       const linkReasons = [...reasons];
-      if (part(o.resolution) !== 'exact') linkReasons.push(`the call is ${o.resolution} in ${s.observationInput.name}${o.reason ? `: ${o.reason}` : ''}`);
+      if (s.argument && !s.argument.value) linkReasons.push(`the route is a parameter and its call-site value is not known${s.argument.reason ? `: ${s.argument.reason}` : ''}`);
+      if (part(o.resolution) !== 'exact' && !s.argument?.value) linkReasons.push(`the call is ${o.resolution} in ${s.observationInput.name}${o.reason ? `: ${o.reason}` : ''}`);
       if (part(ep.obs.resolution) !== 'exact') linkReasons.push(`the endpoint is ${ep.obs.resolution} in ${ep.input.name}${ep.obs.reason ? `: ${ep.obs.reason}` : ep.obs['ext.dotnet.style'] ? ` (${ep.obs['ext.dotnet.style']})` : ''}`);
       if (s.through?.link.reason) linkReasons.push(`package: ${s.through.link.reason}`);
       links.push({
-        id: recordId('lnk', { kind: 'configured_route', from: from.observation, entity: from.entity, to: to.observation }),
+        id: recordId('lnk', { kind: 'configured_route', from: from.observation, entity: from.entity, to: to.observation, argument: s.argument?.observation }),
         kind: 'configured_route',
         via: 'http',
         scope: 'system',
@@ -380,6 +389,12 @@ function contractName(o: Rec): string | null {
   return (c && typeof c.fullName === 'string' ? c.fullName : null) ?? null;
 }
 
+/** Destination names of a site: the call-site value when the destination is a substituted parameter. */
+function siteDestinations(s: Site): string[] {
+  if (s.argument?.value) return [s.argument.value];
+  return destinationNames(s.observation);
+}
+
 interface MessageGroup {
   site: Site;
   /** further observations of the same logical endpoint (same entity, contract and destination) */
@@ -389,7 +404,7 @@ interface MessageGroup {
 function groupSites(list: Site[], role: (s: Site) => string | null): MessageGroup[] {
   const groups = new Map<string, MessageGroup>();
   for (const s of list.slice().sort((a, b) => compareOrdinal(pref(a.observationInput.name, a.observation.id), pref(b.observationInput.name, b.observation.id)))) {
-    const key = [s.input.name, role(s) ?? s.observation.id, contractName(s.observation) ?? '', destinationNames(s.observation).join(','), s.observation.kind].join('\u0000');
+    const key = [s.input.name, role(s) ?? s.observation.id, contractName(s.observation) ?? '', siteDestinations(s).join(','), s.observation.kind].join('\u0000');
     const g = groups.get(key);
     if (g) g.also.push(pref(s.observationInput.name, s.observation.id));
     else groups.set(key, { site: s, also: [] });
@@ -401,7 +416,7 @@ export function linkMessaging(ctx: LinkContext): LinkerResult {
   const notes: LinkerResult['notes'] = [];
   const links: Rec[] = [];
   const identity = ctx.config.messaging.contractIdentity;
-  const publishes = groupSites(sites(ctx, 'messaging.publish', notes), (s) => s.entity);
+  const publishes = groupSites(sites(ctx, 'messaging.publish', notes).flatMap((x) => withArguments(x, ['destination.name'])), (s) => s.entity);
   const subscribeSites: Site[] = [];
   for (const input of ctx.inputs)
     for (const o of input.observations('messaging.subscribe'))
@@ -436,7 +451,7 @@ export function linkMessaging(ctx: LinkContext): LinkerResult {
   for (const p of publishes) {
     const ps = p.site;
     const pKey = contractKey(ps);
-    const pDest = destinationNames(ps.observation);
+    const pDest = siteDestinations(ps);
     const pTransport = transports(ps.observation);
     const matches: { g: MessageGroup; destRes: Resolution; transportRes: Resolution }[] = [];
     // A publish the engine already linked to a subscriber inside its own repository is consumed in the system.
@@ -484,7 +499,7 @@ export function linkMessaging(ctx: LinkContext): LinkerResult {
       for (const [side, o] of [['publisher', ps.observation], ['subscriber', ss.observation]] as const) if (part(o.resolution) !== 'exact') reasons.push(`the ${side} is ${o.resolution}${o.reason ? `: ${o.reason}` : ''}`);
       if (ps.through?.link.reason) reasons.push(`package: ${ps.through.link.reason}`);
       links.push({
-        id: recordId('lnk', { kind: 'consumes_contract', via: 'messaging', from: from.observation, entity: from.entity, to: to.observation }),
+        id: recordId('lnk', { kind: 'consumes_contract', via: 'messaging', from: from.observation, entity: from.entity, to: to.observation, argument: ps.argument?.observation }),
         kind: 'consumes_contract',
         via: 'messaging',
         scope: 'system',
@@ -500,7 +515,7 @@ export function linkMessaging(ctx: LinkContext): LinkerResult {
       const d = ps.observation.destination as Rec | null | undefined;
       const where = d && pDest.length ? `${d.kind} ${pDest.join(' / ')}` : 'an unknown destination';
       links.push({
-        id: recordId('lnk', { kind: 'consumes_contract', via: 'messaging', from: from.observation, entity: from.entity, to: null }),
+        id: recordId('lnk', { kind: 'consumes_contract', via: 'messaging', from: from.observation, entity: from.entity, to: null, argument: ps.argument?.observation }),
         kind: 'consumes_contract',
         via: 'messaging',
         scope: 'system',
@@ -520,31 +535,63 @@ export function linkMessaging(ctx: LinkContext): LinkerResult {
 // ---------------------------------------------------------------------------------------------------------------
 // Real time
 
+/** Lower-case route of a hub, connection or subscription; null when unknown. */
+function hubRoute(o: Rec): string | null {
+  const r = o.canonicalRoute ?? o.route;
+  return typeof r === 'string' && r.startsWith('/') ? r.toLowerCase() : null;
+}
+
+/**
+ * Real-time linking (contract v1.2): a subscription belongs to the hub whose route equals its route, after its
+ * connection's base address routes it to an input; `pushes_to` goes from the hub's sends to subscriptions with the same
+ * method name compared ordinal and case-insensitive. A send whose method is a helper parameter takes the call-site value.
+ */
 export function linkRealtime(ctx: LinkContext): LinkerResult {
   const notes: LinkerResult['notes'] = [];
   const links: Rec[] = [];
-  const senders = sites(ctx, 'realtime.send', notes);
+  const senders = sites(ctx, 'realtime.send', notes).flatMap((x) => withArguments(x, ['method']));
   for (const input of ctx.inputs) {
+    const connections = input.observations('realtime.connection');
     for (const sub of input.observations('realtime.subscribe')) {
       if (input.testProjects.has(sub.project as string)) continue;
       const method = typeof sub.method === 'string' ? sub.method : null;
-      const route = typeof sub.route === 'string' ? sub.route.toLowerCase() : null;
-      // Hubs the subscription can reach.
+      const route = hubRoute(sub);
+      const reasons: string[] = [];
+      // The connection the subscription is made on: same route, else the same client when the route is unknown.
+      const connection =
+        (route ? connections.find((c) => hubRoute(c) === route) : undefined) ??
+        (typeof sub.client === 'string' ? connections.find((c) => c.client === sub.client) : undefined) ??
+        (connections.length === 1 ? connections[0] : undefined);
+      const fromRoutes = ctx.config.routes.filter((r) => r.from === input.name);
+      const ba = connection?.baseAddress as Rec | null | undefined;
+      let targets: Input[] = [];
+      let routeRes: Resolution = 'exact';
+      if (ba) {
+        const key = typeof ba.key === 'string' ? ba.key : null;
+        const values = baseValues(ba);
+        targets = uniqSorted(fromRoutes.filter((r) => r.baseUrl === key || values.includes(r.baseUrl)).map((r) => r.to)).map((n) => ctx.byName.get(n)!);
+        if (!targets.length) reasons.push(`no route in system.yml for the connection's base address ${String(key ?? 'unknown')}`);
+      } else {
+        reasons.push(connection ? 'the connection records no base address' : 'no connection of this subscription is recorded');
+      }
+      if (!targets.length) {
+        const all = uniqSorted(fromRoutes.map((r) => r.to)).map((n) => ctx.byName.get(n)!);
+        if (all.length === 1) {
+          targets = all;
+          reasons.push(`the only route from ${input.name} in system.yml leads to ${all[0].name}`);
+        } else if (route) targets = ctx.inputs.filter((i) => i !== input);
+        routeRes = 'candidate';
+      }
+      if (targets.length > 1) routeRes = 'candidate';
+      // Hubs of the target inputs: by route; without a route, the only hub of the only target.
       let hubs: { input: Input; hub: Rec }[] = [];
       let hubRes: Resolution = 'exact';
-      const reasons: string[] = [];
-      if (route) {
-        hubs = ctx.inputs.filter((i) => i !== input).flatMap((i) => i.observations('realtime.hub').filter((h) => String(h.canonicalRoute ?? h.route ?? '').toLowerCase() === route).map((hub) => ({ input: i, hub })));
-      } else {
-        const targets = uniqSorted(ctx.config.routes.filter((r) => r.from === input.name).map((r) => r.to)).map((n) => ctx.byName.get(n)!);
-        if (targets.length === 1) {
-          hubs = targets[0].observations('realtime.hub').map((hub) => ({ input: targets[0], hub }));
-          hubRes = 'candidate';
-          reasons.push(`the client does not record the hub route; the only route from ${input.name} in system.yml leads to ${targets[0].name}`);
-        } else if (targets.length > 1) {
-          reasons.push(`the client does not record the hub route and routes from ${input.name} lead to ${targets.length} inputs`);
-        }
-      }
+      if (route) hubs = targets.filter((t) => t !== input).flatMap((t) => t.observations('realtime.hub').filter((h) => hubRoute(h) === route).map((hub) => ({ input: t, hub })));
+      else if (targets.length === 1) {
+        hubs = targets[0].observations('realtime.hub').map((hub) => ({ input: targets[0], hub }));
+        hubRes = 'candidate';
+        reasons.push('the client does not record the hub route');
+      } else reasons.push(`the client does not record the hub route and routes from ${input.name} lead to ${targets.length} inputs`);
       if (hubs.length > 1) hubRes = 'ambiguous';
       const to: Rec = { id: '', input: input.name, observation: pref(input.name, sub.id), kind: 'realtime.subscribe', project: sub.project, entity: typeof sub.client === 'string' ? pref(input.name, sub.client as string) : null };
       delete (to as Partial<Rec>).id;
@@ -554,17 +601,23 @@ export function linkRealtime(ctx: LinkContext): LinkerResult {
         for (const s of senders.filter((x) => x.input === h.input)) {
           const sendHub = s.observation.hub;
           if (typeof sendHub === 'string' && sendHub !== 'unknown' && hubEntity && sendHub !== hubEntity) continue;
-          const sendMethod = typeof s.observation.method === 'string' ? (s.observation.method as string) : null;
-          if (sendMethod && method && sendMethod !== method) continue;
+          const sendMethod = s.argument ? s.argument.value : typeof s.observation.method === 'string' ? (s.observation.method as string) : null;
+          if (sendMethod && method && sendMethod.toLowerCase() !== method.toLowerCase()) continue;
           const methodRes: Resolution = sendMethod && method ? 'exact' : 'candidate';
           const linkReasons = [...reasons];
-          if (!sendMethod) linkReasons.push(s.through ? 'the client method name is an argument of the package method at the call site and is not recorded' : 'the sender does not record the client method name');
+          if (!sendMethod) {
+            if (s.argument) linkReasons.push(`the client method name is an argument whose call-site value is not known${s.argument.reason ? `: ${s.argument.reason}` : ''}`);
+            else linkReasons.push(s.through ? 'the client method name is an argument of the package method at the call site and is not recorded' : 'the sender does not record the client method name');
+          }
           if (part(sub.resolution) !== 'exact' && sub.reason) linkReasons.push(`subscription in ${input.name}: ${sub.reason}`);
           if (s.through?.link.reason) linkReasons.push(`package: ${s.through.link.reason}`);
           const from = siteFrom(s, 'realtime.send');
-          const resolution = weakest(part(sub.resolution), part(s.observation.resolution), hubRes, methodRes, s.through?.resolution);
+          // The send's own resolution is weak only because its method or hub is unknown; a substituted method and a
+          // hub found by route stand in for those parts.
+          const sendRes = s.argument?.value ? 'exact' : part(s.observation.resolution);
+          const resolution = weakest(part(sub.resolution), sendRes, routeRes, hubRes, methodRes, s.through?.resolution);
           links.push({
-            id: recordId('lnk', { kind: 'pushes_to', from: from.observation, entity: from.entity, to: to.observation }),
+            id: recordId('lnk', { kind: 'pushes_to', from: from.observation, entity: from.entity, to: to.observation, argument: s.argument?.observation }),
             kind: 'pushes_to',
             via: 'realtime',
             scope: 'system',
@@ -572,8 +625,8 @@ export function linkRealtime(ctx: LinkContext): LinkerResult {
             to,
             resolution,
             ...(linkReasons.length && resolution !== 'exact' ? { reason: linkReasons.join('; ') } : {}),
-            match: { method, sendMethod, hub: { input: h.input.name, observation: pref(h.input.name, h.hub.id), route: h.hub.canonicalRoute ?? h.hub.route ?? null } },
-            evidence: uniqSorted([...s.evidence, ...obsEvidence(input, sub), ...obsEvidence(h.input, h.hub)]),
+            match: { method, sendMethod, hub: { input: h.input.name, observation: pref(h.input.name, h.hub.id), route: h.hub.canonicalRoute ?? h.hub.route ?? null }, connection: connection ? pref(input.name, connection.id) : null },
+            evidence: uniqSorted([...s.evidence, ...obsEvidence(input, sub), ...obsEvidence(h.input, h.hub), ...(connection ? obsEvidence(input, connection) : [])]),
           });
           linked++;
         }
@@ -593,6 +646,131 @@ export function linkRealtime(ctx: LinkContext): LinkerResult {
           evidence: obsEvidence(input, sub),
         });
       }
+    }
+  }
+  return { links, notes };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// In-process dispatch across inputs (contract v1.2, C8): a send in one input whose request has a handler in another
+// input (a handler shipped in a package, or a request type shared through one). Sends and handlers inside one input
+// are the engine's links.
+
+function pattern(o: Rec): string {
+  if (typeof o.pattern === 'string') return o.pattern;
+  return o.mechanism === 'ngrx' ? 'notification' : 'request';
+}
+
+/** Evidence of a dispatch side: its `site`, else every evidence (rule 6). */
+function siteEvidence(input: Input, o: Rec): string[] {
+  return typeof o.site === 'string' ? [pref(input.name, o.site)] : obsEvidence(input, o);
+}
+
+export function linkDispatch(ctx: LinkContext): LinkerResult {
+  const notes: LinkerResult['notes'] = [];
+  const links: Rec[] = [];
+  // A request type is identified across inputs by its source entity: package symbols resolve to their producer.
+  const key = (input: Input, entity: unknown): string | null => {
+    if (typeof entity !== 'string') return null;
+    if (/^(?:dotnet|ts):pkg:/.test(entity)) {
+      const er = ctx.resolver.entity(input, entity);
+      return er?.sourceEntity ? pref(er.producer.input.name, er.sourceEntity) : pref(input.name, entity);
+    }
+    return pref(input.name, entity);
+  };
+  const ancestors = (input: Input, entity: string): Set<string> => {
+    const out = new Set<string>();
+    let frontier = [entity];
+    for (let d = 0; d < 6 && frontier.length; d++) {
+      const next: string[] = [];
+      for (const e of frontier)
+        for (const r of input.relationsFrom.get(e) ?? [])
+          if (r.kind === 'inherits' || r.kind === 'implements') {
+            const k = key(input, r.to);
+            if (k && !out.has(k)) {
+              out.add(k);
+              next.push(r.to as string);
+            }
+          }
+      frontier = next;
+    }
+    return out;
+  };
+  const handlers: { input: Input; o: Rec; request: string; args: string[] | null; ancestors: Set<string> }[] = [];
+  for (const input of ctx.inputs)
+    for (const o of input.observations('inprocess.handler')) {
+      if (input.testProjects.has(o.project as string)) continue;
+      const request = key(input, o.request);
+      if (!request) continue;
+      const args = Array.isArray(o.requestTypeArguments) ? (o.requestTypeArguments as string[]).map((a) => key(input, a) ?? a) : null;
+      handlers.push({ input, o, request, args, ancestors: typeof o.request === 'string' ? ancestors(input, o.request) : new Set() });
+    }
+  for (const s of sites(ctx, 'inprocess.send', notes)) {
+    const o = s.observation;
+    const request = key(s.observationInput, o.request);
+    if (!request) continue;
+    const sendRes: Resolution = o.resolution === 'candidate' ? 'candidate' : o.resolution === 'unresolved' ? 'unresolved' : 'exact';
+    const sendArgs = Array.isArray(o.requestTypeArguments) ? (o.requestTypeArguments as string[]).map((a) => key(s.observationInput, a) ?? a) : null;
+    const p = pattern(o);
+    const matching = handlers.filter((h) => {
+      if (h.o.mechanism !== o.mechanism || pattern(h.o) !== p) return false;
+      const sameRequest = h.request === request;
+      if (!sameRequest && !(sendRes === 'candidate' && h.ancestors.has(request))) return false;
+      if (sendArgs && h.args && sendArgs.join('\u0000') !== h.args.join('\u0000')) return false;
+      return true;
+    });
+    const external = matching.filter((h) => h.input !== s.input);
+    const requestInput = request.slice(0, request.indexOf('/'));
+    const from = siteFrom(s, 'inprocess.send');
+    const fromEvidence = s.through ? s.evidence : siteEvidence(s.observationInput, o);
+    if (!external.length) {
+      // Unresolved only when the request type comes from another input (a cross-repository contract) and no input
+      // handles it; inside one repository the engine reports it.
+      if (!matching.length && requestInput !== s.input.name)
+        links.push({
+          id: recordId('lnk', { kind: 'dispatches_to', from: from.observation, entity: from.entity, to: null }),
+          kind: 'dispatches_to',
+          via: 'inprocess',
+          scope: 'system',
+          from,
+          to: null,
+          resolution: 'unresolved',
+          reason: `no handler in the system for ${request} (${o.mechanism}, ${p})`,
+          match: { mechanism: o.mechanism, pattern: p, request },
+          evidence: fromEvidence,
+        });
+      continue;
+    }
+    for (const h of external.sort((a, b) => compareOrdinal(pref(a.input.name, a.o.id), pref(b.input.name, b.o.id)))) {
+      const reasons: string[] = [];
+      let res: Resolution;
+      if (sendRes === 'candidate') {
+        res = 'candidate';
+        reasons.push('the dispatched argument is not a concrete type; the runtime type decides');
+      } else if (p === 'notification') res = sendRes;
+      else if (matching.length > 1) {
+        res = 'ambiguous';
+        reasons.push(`${matching.length} handlers in the system handle ${request}; the container picks one`);
+      } else res = sendRes;
+      if ((sendArgs === null) !== (h.args === null) && (sendArgs || h.args)) {
+        res = weakest(res, 'candidate');
+        reasons.push('the request is generic and only one side records its type arguments');
+      }
+      if (s.through?.link.reason) reasons.push(`package: ${s.through.link.reason}`);
+      res = weakest(res, s.through?.resolution, part(h.o.resolution));
+      const to = { input: h.input.name, observation: pref(h.input.name, h.o.id), kind: 'inprocess.handler', project: h.o.project, entity: typeof h.o.handler === 'string' ? pref(h.input.name, h.o.handler as string) : null };
+      links.push({
+        id: recordId('lnk', { kind: 'dispatches_to', from: from.observation, entity: from.entity, to: to.observation }),
+        kind: 'dispatches_to',
+        via: 'inprocess',
+        scope: 'system',
+        from,
+        to,
+        resolution: res,
+        ...(reasons.length && res !== 'exact' ? { reason: reasons.join('; ') } : {}),
+        match: { mechanism: o.mechanism, pattern: p, request, handlerMethod: typeof h.o.handlerMethod === 'string' ? pref(h.input.name, h.o.handlerMethod as string) : null },
+        evidence: uniqSorted([...fromEvidence, ...siteEvidence(h.input, h.o)]),
+      });
     }
   }
   return { links, notes };

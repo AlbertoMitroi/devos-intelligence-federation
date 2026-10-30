@@ -1,7 +1,10 @@
 // Record checks shared by input verification and system verification (contract v1 Validation): schema per record,
-// sorted unique ids, every referenced id exists. In a system generation every id may carry an `{input}/` prefix; the
-// schemas are applied with their id patterns widened accordingly (proposal: docs/SYSTEM-GENERATION.md).
-import { schema, validate } from './artifacts/schema.ts';
+// sorted unique ids, every referenced id exists. An observation whose kind has a schema in schema/v1/kinds is checked
+// against it too (contract v1.2). In a system generation every id may carry an `{input}/` prefix; the schemas are
+// applied with their patterns widened accordingly (contract v1.2, "System generation").
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { SCHEMA_DIR, schema, validate } from './artifacts/schema.ts';
 import { compareOrdinal } from './util/canonical.ts';
 import { FILES, type Rec, type RecordSet } from './records.ts';
 
@@ -11,8 +14,19 @@ export const KNOWN_OBSERVATION_KINDS = new Set([
   'topology.resource', 'topology.reference', 'data.maps_to',
   'inprocess.send', 'inprocess.handler', 'eventstore.append', 'eventstore.projection', 'realtime.hub', 'realtime.send', 'realtime.subscribe', 'search.index',
   'workflow.process', 'workflow.node', 'workflow.flow', 'workflow.handler', 'data.table', 'infra.resource', 'ui.component', 'ui.uses_component', 'ui.route',
+  // v1.2
+  'ui.directive', 'ui.pipe', 'ui.module', 'ui.uses_directive', 'http.interceptor', 'http.proxy', 'realtime.connection', 'realtime.invoke', 'state.action', 'call.argument',
 ]);
-export const KNOWN_LINK_KINDS = new Set(['consumes_contract', 'configured_route', 'possible_communication', 'dispatches_to', 'implemented_by_package', 'pushes_to']);
+export const KNOWN_LINK_KINDS = new Set(['consumes_contract', 'configured_route', 'possible_communication', 'dispatches_to', 'implemented_by_package', 'pushes_to', 'renders']);
+
+const kindSchemas = new Map<string, boolean>();
+/** Name of the kind schema (`kinds/{kind}`) when the contract has one. */
+function kindSchema(kind: string): string | null {
+  if (!/^[a-z.]+$/.test(kind)) return null;
+  let has = kindSchemas.get(kind);
+  if (has === undefined) kindSchemas.set(kind, (has = existsSync(join(SCHEMA_DIR, 'kinds', `${kind}.schema.json`))));
+  return has ? `kinds/${kind}` : null;
+}
 
 const SCHEMA_OF: Record<keyof RecordSet, string> = {
   projects: 'project',
@@ -92,6 +106,8 @@ export function checkIntegrity(set: RecordSet, options: IntegrityOptions = {}): 
       const r = records[i];
       const s = key === 'projects' && r.recordType === 'analysisContext' ? schemaFor('analysis-context', system) : schemaFor(SCHEMA_OF[key], system);
       for (const e of validate(s, r)) err(`${FILES[key]} ${r.id ?? `#${i + 1}`}: ${e}`);
+      const ks = key === 'observations' ? kindSchema(String(r.kind)) : null;
+      if (ks) for (const e of validate(schemaFor(ks, system), r)) err(`${FILES[key]} ${r.id}: ${r.kind}: ${e}`);
       if (i > 0 && compareOrdinal(records[i - 1].id, r.id) >= 0) err(`${FILES[key]}: ids not sorted and unique at ${r.id}`);
     }
   }
@@ -134,6 +150,7 @@ export function checkIntegrity(set: RecordSet, options: IntegrityOptions = {}): 
     if (!contexts.has(o.context as string)) ref(`observation ${o.id}: unknown context ${o.context}`);
     if (!projectPaths.has(projectKey(o.input, o.project))) ref(`observation ${o.id}: unknown project ${o.project}`);
     for (const e of o.evidence as string[]) if (!evidence.has(e)) ref(`observation ${o.id}: unknown evidence ${e}`);
+    if (o.site !== undefined && !(o.evidence as string[]).includes(o.site as string)) ref(`observation ${o.id}: site ${o.site} is not one of its evidence`);
     const refs: string[] = [];
     const { id: _id, evidence: _ev, ...fields } = o;
     entityRefs(fields, refs);
@@ -158,6 +175,6 @@ export function checkIntegrity(set: RecordSet, options: IntegrityOptions = {}): 
     for (const e of l.evidence as string[]) if (!evidence.has(e)) ref(`link ${l.id}: unknown evidence ${e}`);
     if (!KNOWN_LINK_KINDS.has(l.kind as string)) countUnknown(`link ${l.kind}`);
   }
-  for (const [k, n] of [...unknownKinds].sort(([a], [b]) => compareOrdinal(a, b))) notes.push(`kind not in contract v1.1: ${k} (${n} records; kept, excluded from linking)`);
+  for (const [k, n] of [...unknownKinds].sort(([a], [b]) => compareOrdinal(a, b))) notes.push(`kind not in contract v1.2: ${k} (${n} records; kept, excluded from linking)`);
   return { errors, references, notes };
 }
